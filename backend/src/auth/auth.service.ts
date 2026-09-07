@@ -1,8 +1,9 @@
-import { Injectable, OnModuleDestroy, UnauthorizedException } from '@nestjs/common';
+import { HttpStatus, Injectable, OnModuleDestroy, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { AuthErrorCode } from './auth-error-code.enum';
 import { LoginDto } from './dto/login.dto';
 
 @Injectable()
@@ -27,7 +28,11 @@ export class AuthService implements OnModuleDestroy {
     });
 
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException({
+        statusCode: HttpStatus.UNAUTHORIZED,
+        code: AuthErrorCode.INVALID_CREDENTIALS,
+        message: 'Invalid credentials',
+      });
     }
 
     const accessToken = await this.jwtService.signAsync({ sub: user.id });

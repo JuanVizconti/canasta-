@@ -1,6 +1,9 @@
 <main>
   <h1>{{ title }}</h1>
-  <p>Supermercado online</p>
+  <p>
+    <a routerLink="/login">Iniciar sesión</a>
+    <a routerLink="/register">Registrarse</a>
+  </p>
+  <app-product-list />
+  <router-outlet />
 </main>
-
-<router-outlet />

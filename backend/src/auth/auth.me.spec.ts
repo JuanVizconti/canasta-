@@ -2,11 +2,17 @@ import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { AuthErrorCode } from './auth-error-code.enum';
 import { AuthModule } from './auth.module';
 
 describe('GET /auth/me', () => {
   let app: INestApplication;
   let jwtService: JwtService;
+  const invalidSessionResponse = {
+    statusCode: 401,
+    code: AuthErrorCode.INVALID_SESSION,
+    message: 'Unauthorized',
+  };
 
   beforeAll(async () => {
     process.env.DATABASE_URL ??= 'postgresql://canasta:canasta@localhost:5432/canasta?schema=public';
@@ -35,15 +41,19 @@ describe('GET /auth/me', () => {
       .expect({ id: 1 });
   });
 
-  it('returns 401 when no token is sent', async () => {
-    await request(app.getHttpServer()).get('/auth/me').expect(401);
+  it('returns INVALID_SESSION when no token is sent', async () => {
+    await request(app.getHttpServer())
+      .get('/auth/me')
+      .expect(401)
+      .expect(invalidSessionResponse);
   });
 
-  it('returns 401 for an invalid or expired token', async () => {
+  it('returns INVALID_SESSION for an invalid or expired token', async () => {
     await request(app.getHttpServer())
       .get('/auth/me')
       .set('Authorization', 'Bearer invalid-token')
-      .expect(401);
+      .expect(401)
+      .expect(invalidSessionResponse);
 
     const expiredToken = await jwtService.signAsync(
       { sub: 1 },
@@ -53,6 +63,7 @@ describe('GET /auth/me', () => {
     await request(app.getHttpServer())
       .get('/auth/me')
       .set('Authorization', `Bearer ${expiredToken}`)
-      .expect(401);
+      .expect(401)
+      .expect(invalidSessionResponse);
   });
 });
