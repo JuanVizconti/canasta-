@@ -1,0 +1,20 @@
+<section>
+  <h2>Productos</h2>
+
+  @if (errorMessage()) {
+    <p>{{ errorMessage() }}</p>
+  }
+
+  @for (product of products(); track product.id) {
+    <article>
+      <h3>{{ product.nombre }}</h3>
+      <p>Marca: {{ product.marca }}</p>
+      <p>Precio: ${{ product.precio }}</p>
+      <p>Stock: {{ product.stock }}</p>
+      @if (product.imgUrl) {
+        <img [src]="product.imgUrl" [alt]="product.nombre" />
+      }
+      <hr />
+    </article>
+  }
+</section>
