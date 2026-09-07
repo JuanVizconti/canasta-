@@ -1,0 +1,33 @@
+<section>
+  <h2>Iniciar sesión</h2>
+
+  @if (sessionMessage()) {
+    <p>{{ sessionMessage() }}</p>
+  }
+
+  <form (ngSubmit)="submit()">
+    <p>
+      <label for="login-email">Email</label>
+      <input id="login-email" name="email" type="email" [(ngModel)]="email" required />
+    </p>
+    <p>
+      <label for="login-password">Contraseña</label>
+      <input
+        id="login-password"
+        name="password"
+        type="password"
+        [(ngModel)]="password"
+        required
+      />
+    </p>
+    <button type="submit" [disabled]="isSubmitting()">Iniciar sesión</button>
+  </form>
+
+  @if (successMessage()) {
+    <p>{{ successMessage() }}</p>
+  }
+
+  @if (errorMessage()) {
+    <p>{{ errorMessage() }}</p>
+  }
+</section>

@@ -1,0 +1,33 @@
+<section>
+  <h2>Registrarse</h2>
+
+  <form (ngSubmit)="submit()">
+    <p>
+      <label for="register-usuario">Usuario</label>
+      <input id="register-usuario" name="usuario" [(ngModel)]="usuario" required />
+    </p>
+    <p>
+      <label for="register-email">Email</label>
+      <input id="register-email" name="email" type="email" [(ngModel)]="email" required />
+    </p>
+    <p>
+      <label for="register-password">Contraseña</label>
+      <input
+        id="register-password"
+        name="password"
+        type="password"
+        [(ngModel)]="password"
+        required
+      />
+    </p>
+    <button type="submit" [disabled]="isSubmitting()">Registrarse</button>
+  </form>
+
+  @if (successMessage()) {
+    <p>{{ successMessage() }}</p>
+  }
+
+  @if (errorMessage()) {
+    <p>{{ errorMessage() }}</p>
+  }
+</section>

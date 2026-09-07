@@ -1,10 +1,29 @@
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
+import { of } from 'rxjs';
 import { App } from './app';
+import { AuthService } from './auth/service/auth.service';
+import { routes } from './app.routes';
+import { ProductService } from './product/service/product.service';
 
 describe('App', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [App],
+      providers: [
+        provideRouter(routes),
+        {
+          provide: AuthService,
+          useValue: {
+            login: () => of({ accessToken: 'jwt-token' }),
+            register: () => of({ accessToken: 'jwt-token' }),
+          },
+        },
+        {
+          provide: ProductService,
+          useValue: { getProducts: () => of([]) },
+        },
+      ],
     }).compileComponents();
   });
 
