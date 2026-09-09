@@ -1,5 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { signal } from '@angular/core';
 import { of } from 'rxjs';
+import { CartService } from '../cart/service/cart.service';
 import { Product } from './model/product.interface';
 import { ProductListComponent } from './product-list.component';
 import { ProductService } from './service/product.service';
@@ -25,6 +27,13 @@ describe('ProductListComponent', () => {
           provide: ProductService,
           useValue: {
             getProducts: () => of(products),
+          },
+        },
+        {
+          provide: CartService,
+          useValue: {
+            cart: signal(null).asReadonly(),
+            addItem: () => of(null),
           },
         },
       ],

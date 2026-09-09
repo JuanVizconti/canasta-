@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { RegisterComponent } from './register.component';
 import { AuthService } from './service/auth.service';
@@ -20,6 +21,12 @@ describe('RegisterComponent', () => {
               receivedRequest = request;
               return registerResult;
             },
+          },
+        },
+        {
+          provide: Router,
+          useValue: {
+            navigateByUrl: () => Promise.resolve(true),
           },
         },
       ],

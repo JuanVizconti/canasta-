@@ -29,6 +29,7 @@ describe('LoginComponent', () => {
           provide: Router,
           useValue: {
             getCurrentNavigation: () => navigationState,
+            navigateByUrl: () => Promise.resolve(true),
           },
         },
       ],

@@ -27,6 +27,7 @@ describe('authInterceptor', () => {
         {
           provide: Router,
           useValue: {
+            url: '/cart',
             navigate: (commands: unknown[], extras: unknown) => {
               navigation = { commands, extras };
               return Promise.resolve(true);
@@ -75,7 +76,7 @@ describe('authInterceptor', () => {
     expect(logoutCalls).toBe(1);
     expect(navigation).toEqual({
       commands: ['/login'],
-      extras: { state: { invalidSession: true } },
+      extras: { state: { invalidSession: true, returnUrl: '/cart' } },
     });
   });
 

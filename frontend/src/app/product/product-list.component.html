@@ -1,6 +1,10 @@
 <section>
   <h2>Productos</h2>
 
+  @if (notificationMessage()) {
+    <p>{{ notificationMessage() }}</p>
+  }
+  
   @if (errorMessage()) {
     <p>{{ errorMessage() }}</p>
   }
@@ -14,6 +18,30 @@
       @if (product.imgUrl) {
         <img [src]="product.imgUrl" [alt]="product.nombre" />
       }
+      <div>
+        <button
+          type="button"
+          (click)="decreaseQuantity(product.id)"
+          [disabled]="getSelectedQuantity(product.id) <= 1"
+        >
+          -
+        </button>
+        <span>{{ getSelectedQuantity(product.id) }}</span>
+        <button
+          type="button"
+          (click)="increaseQuantity(product)"
+          [disabled]="getSelectedQuantity(product.id) >= product.stock"
+        >
+          +
+        </button>
+      </div>
+      <button
+        type="button"
+        (click)="addToCart(product.id)"
+        [disabled]="product.stock <= 0"
+      >
+        Agregar al carrito
+      </button>
       <hr />
     </article>
   }
