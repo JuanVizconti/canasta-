@@ -6,3 +6,50 @@
 main {
   margin: 2rem;
 }
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid #ddd;
+}
+
+.brand {
+  color: inherit;
+  font-size: 1.25rem;
+  font-weight: bold;
+  text-decoration: none;
+}
+
+nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.account-menu {
+  position: relative;
+}
+
+.account-menu-items {
+  position: absolute;
+  right: 0;
+  z-index: 5;
+  display: grid;
+  min-width: 9rem;
+  padding: 0.5rem;
+  background: white;
+  border: 1px solid #ddd;
+}
+
+.account-menu-items a,
+.account-menu-items button {
+  padding: 0.35rem;
+  color: inherit;
+  text-align: left;
+  text-decoration: none;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}

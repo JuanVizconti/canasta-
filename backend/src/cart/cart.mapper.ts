@@ -2,6 +2,9 @@ import { Prisma } from '@prisma/client';
 
 export const cartInclude = {
   items: {
+    orderBy:{
+      id: 'asc',
+    },
     include: {
       product: true,
     },

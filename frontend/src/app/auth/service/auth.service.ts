@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { Injectable } from '@angular/core';
+import { Injectable, signal } from '@angular/core';
 import { Observable, switchMap, tap } from 'rxjs';
 import {
   LoginRequest,
@@ -12,6 +12,8 @@ import {
 export class AuthService {
   private readonly authUrl = 'http://localhost:3000/auth/login';
   private readonly usersUrl = 'http://localhost:3000/users';
+  private readonly authenticated = signal(localStorage.getItem('accessToken') !== null);
+  readonly isAuthenticated = this.authenticated.asReadonly();
 
   constructor(private readonly http: HttpClient) {}
 
@@ -19,6 +21,7 @@ export class AuthService {
     return this.http.post<LoginResponse>(this.authUrl, request).pipe(
       tap(({ accessToken }) => {
         localStorage.setItem('accessToken', accessToken);
+        this.authenticated.set(true);
       }),
     );
   }
@@ -31,5 +34,6 @@ export class AuthService {
 
   logout(): void {
     localStorage.removeItem('accessToken');
+    this.authenticated.set(false);
   }
 }

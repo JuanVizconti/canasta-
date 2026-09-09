@@ -9,6 +9,7 @@ import { AuthService } from './service/auth.service';
   selector: 'app-login',
   imports: [FormsModule],
   templateUrl: './login.component.html',
+  styleUrl: './login.component.scss',
 })
 export class LoginComponent {
   email = '';
@@ -57,6 +58,10 @@ export class LoginComponent {
         this.isSubmitting.set(false);
       },
     });
+  }
+
+  close(): void {
+    void this.router.navigateByUrl('/');
   }
 
   private getSafeReturnUrl(returnUrl:unknown):string{

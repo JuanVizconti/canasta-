@@ -1,11 +1,13 @@
 import { Component, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { AuthService } from './service/auth.service';
 
 @Component({
   selector: 'app-register',
   imports: [FormsModule],
   templateUrl: './register.component.html',
+  styleUrl: './register.component.scss',
 })
 export class RegisterComponent {
   usuario = '';
@@ -15,7 +17,10 @@ export class RegisterComponent {
   successMessage = signal('');
   errorMessage = signal('');
 
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly router: Router,
+  ) {}
 
   submit(): void {
     this.isSubmitting.set(true);
@@ -34,5 +39,9 @@ export class RegisterComponent {
           this.isSubmitting.set(false);
         },
       });
+  }
+
+  close(): void {
+    void this.router.navigateByUrl('/');
   }
 }

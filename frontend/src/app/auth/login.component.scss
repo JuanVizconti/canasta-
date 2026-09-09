@@ -1,0 +1,24 @@
+:host {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(0 0 0 / 15%);
+}
+
+.auth-card {
+  position: relative;
+  width: min(100%, 26rem);
+  padding: 1.5rem;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 0.25rem;
+}
+
+.close-button {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+}

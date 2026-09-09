@@ -1,0 +1,55 @@
+<section class="cart-drawer" role="dialog" aria-modal="true" aria-labelledby="cart-title">
+  <button class="close-button" type="button" aria-label="Cerrar carrito" (click)="close()">×</button>
+  <h2 id="cart-title">Carrito</h2>
+
+  @if (!isAuthenticated()) {
+    <p>Tu carrito está vacío.</p>
+    <p>Iniciá sesión para agregar productos.</p>
+  } @else if (cart() === null) {
+    <p>Cargando carrito...</p>
+  } @else if (cart()!.items.length === 0) {
+    <p>Tu carrito está vacío.</p>
+  } @else {
+    @for (item of cart()!.items; track item.id) {
+      <article>
+        <h3>{{ item.product.nombre }}</h3>
+        <p>Marca: {{ item.product.marca }}</p>
+        <p>Precio: ${{ item.product.precio }}</p>
+        <p>Stock: {{ item.product.stock }}</p>
+        @if (item.product.imgUrl) {
+          <img [src]="item.product.imgUrl" [alt]="item.product.nombre" />
+        }
+         <div>
+    <span>Cantidad: </span>
+    <button
+      type="button"
+      (click)="decreaseQuantity(item.productId, item.cantidad)"
+      [disabled]="item.cantidad <= 1"
+    >
+      -
+    </button>
+    <span>{{ item.cantidad }}</span>
+    <button
+      type="button"
+      (click)="increaseQuantity(
+        item.productId,
+        item.cantidad,
+        item.product.stock
+      )"
+      [disabled]="item.cantidad >= item.product.stock"
+    >
+      +
+    </button>
+    </div>
+        <button type="button" (click)="removeItem(item.productId)">Eliminar</button>
+        <hr />
+      </article>
+    }
+
+    <p>Precio total: ${{ cart()!.price }}</p>
+  }
+
+  @if (errorMessage()) {
+    <p>{{ errorMessage() }}</p>
+  }
+</section>

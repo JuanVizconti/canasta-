@@ -13,7 +13,6 @@ describe('AuthService', () => {
       providers: [provideHttpClient(), provideHttpClientTesting()],
     });
 
-    service = TestBed.inject(AuthService);
     httpTesting = TestBed.inject(HttpTestingController);
   });
 
@@ -23,6 +22,7 @@ describe('AuthService', () => {
   });
 
   it('logs in and stores the access token', () => {
+    service = TestBed.inject(AuthService);
     const requestBody = { email: 'usuario@email.com', password: '12345678' };
 
     service.login(requestBody).subscribe();
@@ -33,9 +33,25 @@ describe('AuthService', () => {
     request.flush({ accessToken: 'jwt-token' });
 
     expect(localStorage.getItem('accessToken')).toBe('jwt-token');
+    expect(service.isAuthenticated()).toBe(true);
+  });
+
+  it('starts authenticated when an access token exists', () => {
+    localStorage.setItem('accessToken', 'jwt-token');
+
+    service = TestBed.inject(AuthService);
+
+    expect(service.isAuthenticated()).toBe(true);
+  });
+
+  it('starts unauthenticated when there is no access token', () => {
+    service = TestBed.inject(AuthService);
+
+    expect(service.isAuthenticated()).toBe(false);
   });
 
   it('registers, logs in with the same credentials, and stores the token', () => {
+    service = TestBed.inject(AuthService);
     const requestBody = {
       usuario: 'Usuario',
       email: 'usuario@email.com',
@@ -58,9 +74,11 @@ describe('AuthService', () => {
     loginRequest.flush({ accessToken: 'registered-jwt-token' });
 
     expect(localStorage.getItem('accessToken')).toBe('registered-jwt-token');
+    expect(service.isAuthenticated()).toBe(true);
   });
 
   it('does not log in when registration fails', () => {
+    service = TestBed.inject(AuthService);
     service.register({
       usuario: 'Usuario',
       email: 'usuario@email.com',
@@ -75,10 +93,17 @@ describe('AuthService', () => {
   });
 
   it('removes the access token when logging out', () => {
-    localStorage.setItem('accessToken', 'jwt-token');
+    service = TestBed.inject(AuthService);
+    service.login({ email: 'usuario@email.com', password: '12345678' }).subscribe();
+    httpTesting
+      .expectOne('http://localhost:3000/auth/login')
+      .flush({ accessToken: 'jwt-token' });
+
+    expect(service.isAuthenticated()).toBe(true);
 
     service.logout();
 
     expect(localStorage.getItem('accessToken')).toBeNull();
+    expect(service.isAuthenticated()).toBe(false);
   });
 });
