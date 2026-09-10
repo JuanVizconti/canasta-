@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { AuthErrorCode } from './auth-error-code.enum';
+import { AuthErrorCode } from './interfaces/auth-error-code.enum';
 import { AuthModule } from './auth.module';
 
 describe('GET /auth/me', () => {

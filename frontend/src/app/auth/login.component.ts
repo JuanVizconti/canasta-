@@ -64,6 +64,14 @@ export class LoginComponent {
     void this.router.navigateByUrl('/');
   }
 
+  goToRegister():void{
+    void this.router.navigate(['/register'],{
+      state:{
+        returnUrl: this.returnUrl,
+      },
+    });
+  }
+
   private getSafeReturnUrl(returnUrl:unknown):string{
     if (
       typeof returnUrl !== 'string'||

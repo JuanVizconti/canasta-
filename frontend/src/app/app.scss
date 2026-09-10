@@ -28,28 +28,33 @@ nav {
   gap: 1rem;
 }
 
-.account-menu {
-  position: relative;
+.logout-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.25);
 }
 
-.account-menu-items {
-  position: absolute;
-  right: 0;
-  z-index: 5;
-  display: grid;
-  min-width: 9rem;
-  padding: 0.5rem;
+.logout-confirmation {
+  padding: 1.5rem;
   background: white;
   border: 1px solid #ddd;
 }
 
-.account-menu-items a,
-.account-menu-items button {
-  padding: 0.35rem;
-  color: inherit;
-  text-align: left;
-  text-decoration: none;
-  background: none;
-  border: 0;
-  cursor: pointer;
+.logout-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.logout-notification {
+  position: fixed;
+  top: 5rem;
+  right: 2rem;
+  z-index: 30;
+  padding: 0.75rem 1rem;
+  background: white;
+  border: 1px solid #ddd;
 }
