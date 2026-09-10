@@ -16,11 +16,16 @@ export class RegisterComponent {
   isSubmitting = signal(false);
   successMessage = signal('');
   errorMessage = signal('');
+  private returnUrl = '/';
 
   constructor(
     private readonly authService: AuthService,
     private readonly router: Router,
-  ) {}
+  ) {
+    const state= this.router.getCurrentNavigation()?.extras.state;
+
+    this.returnUrl= this.getSafeReturnUrl(state?.['returnUrl']);
+  }
 
   submit(): void {
     this.isSubmitting.set(true);
@@ -33,6 +38,8 @@ export class RegisterComponent {
         next: () => {
           this.successMessage.set('Registro exitoso.');
           this.isSubmitting.set(false);
+
+          void this.router.navigateByUrl(this.returnUrl);
         },
         error: () => {
           this.errorMessage.set('No se pudo completar el registro.');
@@ -41,7 +48,26 @@ export class RegisterComponent {
       });
   }
 
+  goToLogin():void{
+    void this.router.navigate(['/login'],{
+      state:{
+        returnUrl: this.returnUrl,
+      },
+    });
+  }
+
   close(): void {
     void this.router.navigateByUrl('/');
+  }
+
+  private getSafeReturnUrl(returnUrl: unknown):string{
+    if(
+      typeof returnUrl!== 'string' ||
+      returnUrl === '/login' ||
+      returnUrl === '/register'
+    ){
+      return '/';
+    }
+    return returnUrl;
   }
 }

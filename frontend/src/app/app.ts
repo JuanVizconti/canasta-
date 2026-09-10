@@ -12,20 +12,32 @@ import { ProductListComponent } from './product/product-list.component';
 export class App {
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
-  readonly accountMenuOpen = signal(false);
   readonly isAuthenticated = this.authService.isAuthenticated;
+  readonly showLogoutConfirmation = signal(false);
+  readonly logoutMessage = signal('');
 
-  toggleAccountMenu(): void {
-    this.accountMenuOpen.update((isOpen) => !isOpen);
+  goToLogin():void{
+    void this.router.navigate(['/login']);
+  }
+  
+  openLogoutConfirmation():void{
+    this.showLogoutConfirmation.set(true);
+  }
+  
+  closeLogoutConfirmation():void{
+    this.showLogoutConfirmation.set(false);
   }
 
-  closeAccountMenu(): void {
-    this.accountMenuOpen.set(false);
-  }
-
-  logout(): void {
+  confirmLogout():void{
     this.authService.logout();
-    this.closeAccountMenu();
+    this.closeLogoutConfirmation();
+
+    this.logoutMessage.set('Cerraste sesión correctamente.');
+
+    setTimeout(() => {
+      this.logoutMessage.set('');
+    }, 1500);
+
     void this.router.navigateByUrl('/');
   }
 }

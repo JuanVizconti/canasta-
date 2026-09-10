@@ -1,7 +1,7 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { AuthErrorCode } from './auth-error-code.enum';
+import { AuthErrorCode } from './interfaces/auth-error-code.enum';
 import { AuthService } from './auth.service';
 
 describe('AuthService', () => {

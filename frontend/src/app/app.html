@@ -2,24 +2,34 @@
   <a class="brand" routerLink="/">Canasta</a>
 
   <nav aria-label="Navegación principal">
-    <div class="account-menu">
-      <button type="button" (click)="toggleAccountMenu()">Cuenta ▼</button>
-
-      @if (accountMenuOpen()) {
-        <div class="account-menu-items">
-          @if (isAuthenticated()) {
-            <button type="button" (click)="logout()">Cerrar sesión</button>
-          } @else {
-            <a routerLink="/login" (click)="closeAccountMenu()">Iniciar sesión</a>
-            <a routerLink="/register" (click)="closeAccountMenu()">Registrarse</a>
-          }
-        </div>
-      }
-    </div>
+    @if (isAuthenticated()) {
+      <button type="button" (click)="openLogoutConfirmation()">Salir</button>
+    } @else {
+      <button type="button" (click)="goToLogin()">Ingresar</button>
+    }
 
     <a routerLink="/cart">Ver carrito</a>
   </nav>
 </header>
+
+@if (showLogoutConfirmation()) {
+  <div class="logout-overlay">
+    <div class="logout-confirmation">
+      <p>¿Estás seguro de que querés cerrar sesión?</p>
+
+      <div class="logout-actions">
+        <button type="button" (click)="confirmLogout()">Sí</button>
+        <button type="button" (click)="closeLogoutConfirmation()">No</button>
+      </div>
+    </div>
+  </div>
+}
+
+@if (logoutMessage()) {
+  <div class="logout-notification">
+    {{ logoutMessage() }}
+  </div>
+}
 
 <main>
   <app-product-list />

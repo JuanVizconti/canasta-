@@ -21,7 +21,13 @@
         required
       />
     </p>
-    <button type="submit" [disabled]="isSubmitting()">Iniciar sesión</button>
+    <button type="submit" [disabled]="isSubmitting()">Ingresar</button>
+    <p class="auth-switch">
+      ¿No tenés una cuenta?
+        <button type="button" (click)="goToRegister()">
+          Registrate
+        </button>
+    </p>
   </form>
 
   @if (successMessage()) {

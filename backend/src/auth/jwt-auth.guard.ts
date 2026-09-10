@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { AuthErrorCode } from './auth-error-code.enum';
+import { AuthErrorCode } from './interfaces/auth-error-code.enum';
 import { AuthenticatedRequest } from './interfaces/authenticated-request.interface';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 
