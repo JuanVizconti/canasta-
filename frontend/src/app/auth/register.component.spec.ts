@@ -26,6 +26,7 @@ describe('RegisterComponent', () => {
         {
           provide: Router,
           useValue: {
+            getCurrentNavigation: () => null,
             navigateByUrl: () => Promise.resolve(true),
           },
         },

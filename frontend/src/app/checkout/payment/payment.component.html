@@ -1,0 +1,34 @@
+<section class="checkout-card">
+  <h2>Método de pago</h2>
+
+  <label>
+    <input
+      type="radio"
+      name="payment-method"
+      [checked]="selectedMethod() === 'CASH'"
+      (change)="selectMethod('CASH')"
+    />
+    Efectivo
+  </label>
+  <p>Pagás al recibir o retirar tu pedido.</p>
+
+  <label>
+    <input
+      type="radio"
+      name="payment-method"
+      [checked]="selectedMethod() === 'MERCADO_PAGO'"
+      (change)="selectMethod('MERCADO_PAGO')"
+    />
+    Mercado Pago
+  </label>
+  <p>Pagás online a través de Mercado Pago.</p>
+
+  @if (hasSubmitted() && !selectedMethod()) {
+    <p>Elegí un método de pago para continuar.</p>
+  }
+
+  <div class="checkout-actions">
+    <button type="button" (click)="goBack()">Atrás</button>
+    <button type="button" (click)="continue()">Continuar</button>
+  </div>
+</section>

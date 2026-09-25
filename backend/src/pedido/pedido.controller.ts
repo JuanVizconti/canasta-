@@ -1,0 +1,28 @@
+import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-request.interface';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CreatePedidoDto } from './dto/create-pedido.dto';
+import { QuotePedidoDto } from './dto/quote-pedido.dto';
+import { PedidoService } from './pedido.service';
+
+@Controller('pedidos')
+@UseGuards(JwtAuthGuard)
+export class PedidoController {
+  constructor(private readonly pedidoService: PedidoService) {}
+
+  @Post('quote')
+  quote(
+    @Req() request: AuthenticatedRequest,
+    @Body() quotePedidoDto: QuotePedidoDto,
+  ) {
+    return this.pedidoService.quote(request.user.id, quotePedidoDto);
+  }
+
+  @Post()
+  create(
+    @Req() request: AuthenticatedRequest,
+    @Body() createPedidoDto: CreatePedidoDto,
+  ) {
+    return this.pedidoService.create(request.user.id, createPedidoDto);
+  }
+}

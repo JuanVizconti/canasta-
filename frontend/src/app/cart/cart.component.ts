@@ -29,6 +29,10 @@ export class CartComponent implements OnInit {
     void this.router.navigateByUrl('/');
   }
 
+  continueToCheckout(): void {
+    void this.router.navigateByUrl('/checkout');
+  }
+
   addItem(productId: number, cantidad = 1): void {
     this.updateCart(() => this.cartService.addItem(productId, cantidad));
   }

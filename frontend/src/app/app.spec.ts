@@ -45,24 +45,21 @@ describe('App', () => {
     }).compileComponents();
   });
 
-  it('creates the app and shows account links when there is no session', () => {
+  it('creates the app and shows login when there is no session', () => {
     const fixture = TestBed.createComponent(App);
-    fixture.componentInstance.toggleAccountMenu();
     fixture.detectChanges();
 
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.textContent).toContain('Canasta');
-    expect(compiled.textContent).toContain('Iniciar sesión');
-    expect(compiled.textContent).toContain('Registrarse');
+    expect(compiled.textContent).toContain('Ingresar');
   });
 
   it('shows logout when there is an active session', () => {
     authenticatedState.set(true);
     const fixture = TestBed.createComponent(App);
-    fixture.componentInstance.toggleAccountMenu();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Cerrar sesión');
+    expect(fixture.nativeElement.textContent).toContain('Salir');
   });
 
   it('logs out and navigates home from the header', async () => {
@@ -70,7 +67,7 @@ describe('App', () => {
     const router = TestBed.inject(Router);
     await router.navigateByUrl('/login');
 
-    fixture.componentInstance.logout();
+    fixture.componentInstance.confirmLogout();
     await fixture.whenStable();
 
     expect(logoutCalls).toBe(1);

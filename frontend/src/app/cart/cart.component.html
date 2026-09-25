@@ -3,8 +3,7 @@
   <h2 id="cart-title">Carrito</h2>
 
   @if (!isAuthenticated()) {
-    <p>Tu carrito está vacío.</p>
-    <p>Iniciá sesión para agregar productos.</p>
+    <p>Iniciá sesión para agregar productos al carrito.</p>
   } @else if (cart() === null) {
     <p>Cargando carrito...</p>
   } @else if (cart()!.items.length === 0) {
@@ -47,6 +46,7 @@
     }
 
     <p>Precio total: ${{ cart()!.price }}</p>
+    <button type="button" (click)="continueToCheckout()">Continuar con la compra</button>
   }
 
   @if (errorMessage()) {

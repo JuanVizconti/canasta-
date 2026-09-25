@@ -1,0 +1,68 @@
+<section class="checkout-card">
+  <h2>Datos personales</h2>
+
+  <form (ngSubmit)="submit()" novalidate>
+    <p>
+      <label for="checkout-nombre">Nombre</label>
+      <input
+        id="checkout-nombre"
+        name="nombre"
+        [ngModel]="personalInfo().nombre"
+        (ngModelChange)="updatePersonalInfo('nombre', $event)"
+        required
+      />
+      @if (hasSubmitted() && !isNombreValid()) {
+        <span>Ingresá un nombre de al menos 2 caracteres.</span>
+      }
+    </p>
+
+    <p>
+      <label for="checkout-apellido">Apellido</label>
+      <input
+        id="checkout-apellido"
+        name="apellido"
+        [ngModel]="personalInfo().apellido"
+        (ngModelChange)="updatePersonalInfo('apellido', $event)"
+        required
+      />
+      @if (hasSubmitted() && !isApellidoValid()) {
+        <span>Ingresá un apellido de al menos 2 caracteres.</span>
+      }
+    </p>
+
+    <p>
+      <label for="checkout-dni">DNI</label>
+      <input
+        id="checkout-dni"
+        name="dni"
+        inputmode="numeric"
+        [ngModel]="personalInfo().dni"
+        (ngModelChange)="updatePersonalInfo('dni', $event)"
+        required
+      />
+      @if (hasSubmitted() && !isDniValid()) {
+        <span>El DNI debe tener al menos 7 dígitos.</span>
+      }
+    </p>
+
+    <p>
+      <label for="checkout-telefono">Teléfono</label>
+      <input
+        id="checkout-telefono"
+        name="telefono"
+        inputmode="numeric"
+        [ngModel]="personalInfo().telefono"
+        (ngModelChange)="updatePersonalInfo('telefono', $event)"
+        required
+      />
+      @if (hasSubmitted() && !isTelefonoValid()) {
+        <span>El teléfono debe tener entre 8 y 15 dígitos.</span>
+      }
+    </p>
+
+    <div class="checkout-actions">
+      <button type="button" (click)="goBack()">Volver</button>
+      <button type="submit">Continuar</button>
+    </div>
+  </form>
+</section>

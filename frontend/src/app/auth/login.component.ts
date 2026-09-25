@@ -55,6 +55,11 @@ export class LoginComponent {
             ? 'Email o contraseña incorrectos.'
             : 'No se pudo iniciar sesión.',
         );
+
+        setTimeout(() => {
+          this.errorMessage.set('');
+        }, 2500 );
+        
         this.isSubmitting.set(false);
       },
     });

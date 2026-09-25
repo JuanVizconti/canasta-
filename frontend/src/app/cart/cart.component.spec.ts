@@ -15,6 +15,7 @@ describe('CartComponent', () => {
   let updateItemResult: Observable<Cart>;
   let removeItemResult: Observable<Cart>;
   let getCartCalls: number;
+  let navigatedTo: string | undefined;
   const cartState = signal<Cart | null>(null);
   const authenticatedState = signal(true);
 
@@ -45,6 +46,7 @@ describe('CartComponent', () => {
     updateItemResult = of(cartWithItems);
     removeItemResult = of(emptyCart);
     getCartCalls = 0;
+    navigatedTo = undefined;
     cartState.set(null);
     authenticatedState.set(true);
 
@@ -70,7 +72,12 @@ describe('CartComponent', () => {
         },
         {
           provide: Router,
-          useValue: { navigateByUrl: () => Promise.resolve(true) },
+          useValue: {
+            navigateByUrl: (url: string) => {
+              navigatedTo = url;
+              return Promise.resolve(true);
+            },
+          },
         },
       ],
     }).compileComponents();
@@ -102,8 +109,9 @@ describe('CartComponent', () => {
     fixture.detectChanges();
 
     expect(getCartCalls).toBe(0);
-    expect(fixture.nativeElement.textContent).toContain('Tu carrito está vacío.');
-    expect(fixture.nativeElement.textContent).toContain('Iniciá sesión para agregar productos.');
+    expect(fixture.nativeElement.textContent).toContain(
+      'Iniciá sesión para agregar productos al carrito.',
+    );
   });
 
   it('loads a cart with items for the template', () => {
@@ -114,6 +122,24 @@ describe('CartComponent', () => {
     expect(component.cart()).toEqual(cartWithItems);
     expect(fixture.nativeElement.textContent).toContain('Coca-Cola 2.25L');
     expect(fixture.nativeElement.textContent).toContain('Precio total: $5001.00');
+    expect(fixture.nativeElement.textContent).toContain('Continuar con la compra');
+  });
+
+  it('does not show checkout navigation for an empty cart', () => {
+    getCartResult = of(emptyCart);
+
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).not.toContain('Continuar con la compra');
+  });
+
+  it('navigates to checkout when continuing with a cart that has items', () => {
+    getCartResult = of(cartWithItems);
+    fixture.detectChanges();
+
+    component.continueToCheckout();
+
+    expect(navigatedTo).toBe('/checkout');
   });
 
   it('updates the cart signal after changing an item quantity', () => {

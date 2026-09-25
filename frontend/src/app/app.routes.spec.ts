@@ -8,6 +8,8 @@ import { RegisterComponent } from './auth/register.component';
 import { AuthService } from './auth/service/auth.service';
 import { CartComponent } from './cart/cart.component';
 import { CartService } from './cart/service/cart.service';
+import { CheckoutComponent } from './checkout/checkout.component';
+import { CheckoutService } from './checkout/service/checkout.service';
 import { routes } from './app.routes';
 
 describe('app routes', () => {
@@ -28,6 +30,18 @@ describe('app routes', () => {
           useValue: {
             cart: signal(null).asReadonly(),
             getCart: () => of({ id: null, price: '0.00', items: [] }),
+          },
+        },
+        {
+          provide: CheckoutService,
+          useValue: {
+            checkoutData: signal({
+              currentStep: 'cart-review' as const,
+              personalInfo: { nombre: '', apellido: '', dni: '', telefono: '' },
+              delivery: null,
+              cart: null,
+              payment: null,
+            }).asReadonly(),
           },
         },
       ],
@@ -55,6 +69,16 @@ describe('app routes', () => {
 
     await harness.navigateByUrl('/cart', CartComponent);
 
-    expect(harness.routeNativeElement?.textContent).toContain('Tu carrito está vacío.');
+    expect(harness.routeNativeElement?.textContent).toContain(
+      'Iniciá sesión para agregar productos al carrito.',
+    );
+  });
+
+  it('loads CheckoutComponent at /checkout', async () => {
+    const harness = await RouterTestingHarness.create();
+
+    await harness.navigateByUrl('/checkout', CheckoutComponent);
+
+    expect(harness.routeNativeElement?.textContent).toContain('Revisá tu carrito');
   });
 });

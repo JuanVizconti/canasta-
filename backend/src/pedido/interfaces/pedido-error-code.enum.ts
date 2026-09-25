@@ -1,0 +1,3 @@
+export enum PedidoErrorCode {
+  MINIMUM_PURCHASE_NOT_REACHED = 'MINIMUM_PURCHASE_NOT_REACHED',
+}

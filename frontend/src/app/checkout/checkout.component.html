@@ -1,0 +1,19 @@
+@if (checkoutData().currentStep === 'cart-review') {
+  <app-cart-review (completed)="goToPersonalInfo()" />
+}
+
+@if (checkoutData().currentStep === 'personal-info') {
+  <app-personal-info (back)="goToCartReview()" (completed)="goToDelivery()" />
+}
+
+@if (checkoutData().currentStep === 'delivery') {
+  <app-delivery (back)="goToPersonalInfo()" (completed)="goToPayment()" />
+}
+
+@if (checkoutData().currentStep === 'payment') {
+  <app-payment (back)="goToDelivery()" (completed)="goToConfirmation()" />
+}
+
+@if (checkoutData().currentStep === 'confirmation') {
+  <app-confirmation (back)="goToPayment()" />
+}
