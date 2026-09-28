@@ -1,25 +1,20 @@
-import {
-  IsNumberString,
-  IsString,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsDefined, IsEnum, ValidateNested } from 'class-validator';
+import { PaymentMethod } from '@prisma/client';
+import { DeliveryDto } from './delivery.dto';
+import { PersonalInfoDto } from './personal-info.dto';
 
 export class CreatePedidoDto {
-  @IsString()
-  @MinLength(2)
-  nombre: string;
+  @IsDefined()
+  @ValidateNested()
+  @Type(() => PersonalInfoDto)
+  personalInfo: PersonalInfoDto;
 
-  @IsString()
-  @MinLength(2)
-  apellido: string;
+  @IsDefined()
+  @ValidateNested()
+  @Type(() => DeliveryDto)
+  delivery: DeliveryDto;
 
-  @IsNumberString()
-  @MinLength(7)
-  dni: string;
-
-  @IsNumberString()
-  @MinLength(8)
-  @MaxLength(15)
-  telefono: string;
+  @IsEnum(PaymentMethod)
+  paymentMethod: PaymentMethod;
 }

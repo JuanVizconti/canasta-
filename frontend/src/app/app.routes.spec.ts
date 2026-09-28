@@ -10,6 +10,8 @@ import { CartComponent } from './cart/cart.component';
 import { CartService } from './cart/service/cart.service';
 import { CheckoutComponent } from './checkout/checkout.component';
 import { CheckoutService } from './checkout/service/checkout.service';
+import { PedidoComponent } from './pedido/pedido.component';
+import { PedidoService } from './pedido/service/pedido.service';
 import { routes } from './app.routes';
 
 describe('app routes', () => {
@@ -42,6 +44,24 @@ describe('app routes', () => {
               cart: null,
               payment: null,
             }).asReadonly(),
+          },
+        },
+        {
+          provide: PedidoService,
+          useValue: {
+            getById: (id: number) => of({
+              id,
+              estado: 'CONFIRMED',
+              createdAt: '2026-09-28T18:30:00.000Z',
+              personalInfo: { nombre: 'Juan', apellido: 'Perez', dni: '12345678', telefono: '1122334455' },
+              delivery: { method: 'PICKUP' },
+              items: [],
+              subtotal: '20000.00',
+              serviceFee: '500.00',
+              deliveryFee: '0.00',
+              total: '20500.00',
+              payment: { method: 'CASH', status: 'PENDING' },
+            }),
           },
         },
       ],
@@ -80,5 +100,13 @@ describe('app routes', () => {
     await harness.navigateByUrl('/checkout', CheckoutComponent);
 
     expect(harness.routeNativeElement?.textContent).toContain('Revisá tu carrito');
+  });
+
+  it('loads PedidoComponent at /pedidos/:id', async () => {
+    const harness = await RouterTestingHarness.create();
+
+    await harness.navigateByUrl('/pedidos/27', PedidoComponent);
+
+    expect(harness.routeNativeElement?.textContent).toContain('Pedido #27');
   });
 });

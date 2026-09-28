@@ -60,5 +60,17 @@
     <button type="button" (click)="loadQuote()">Reintentar</button>
   }
 
+  @if (creationErrorMessage()) {
+    <p>{{ creationErrorMessage() }}</p>
+  }
+
+  @if (checkoutData().payment?.method === 'CASH') {
+    <button type="button" (click)="confirmCashOrder()" [disabled]="isSubmitting()">
+      {{ isSubmitting() ? 'Confirmando...' : 'Confirmar pedido' }}
+    </button>
+  } @else if (checkoutData().payment?.method === 'MERCADO_PAGO') {
+    <button type="button" disabled>Ir a pagar</button>
+  }
+
   <button type="button" (click)="goBack()">Atrás</button>
 </section>

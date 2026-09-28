@@ -1,7 +1,10 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
+import { Router } from '@angular/router';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { Cart } from '../../cart/model/cart.interface';
+import { CartService } from '../../cart/service/cart.service';
+import { CreatedPedido } from '../../pedido/model/create-pedido.interface';
 import { PedidoQuote } from '../../pedido/model/pedido-quote.interface';
 import { PedidoService } from '../../pedido/service/pedido.service';
 import { CheckoutData } from '../model/checkout.interface';
@@ -14,6 +17,10 @@ describe('ConfirmationComponent', () => {
   let checkoutData: ReturnType<typeof signal<CheckoutData>>;
   let quoteCalls: string[];
   let quoteResponse: Observable<PedidoQuote>;
+  let createResponse: Observable<CreatedPedido>;
+  let createCalls: unknown[];
+  let refreshedCart: Cart | undefined;
+  let navigatedTo: unknown[] | undefined;
 
   const cart: Cart = {
     id: 1,
@@ -60,6 +67,15 @@ describe('ConfirmationComponent', () => {
     }));
     quoteCalls = [];
     quoteResponse = of(quote);
+    createCalls = [];
+    refreshedCart = undefined;
+    navigatedTo = undefined;
+    createResponse = of({
+      id: 27,
+      estado: 'CONFIRMED',
+      total: '22500.00',
+      payment: { method: 'CASH', status: 'PENDING' },
+    });
 
     await TestBed.configureTestingModule({
       imports: [ConfirmationComponent],
@@ -71,6 +87,29 @@ describe('ConfirmationComponent', () => {
             quote: (deliveryMethod: string) => {
               quoteCalls.push(deliveryMethod);
               return quoteResponse;
+            },
+            create: (request: unknown) => {
+              createCalls.push(request);
+              return createResponse;
+            },
+          },
+        },
+        {
+          provide: CartService,
+          useValue: {
+            getCart: () => {
+              const emptyCart = { id: 1, price: '0.00', items: [] };
+              refreshedCart = emptyCart;
+              return of(emptyCart);
+            },
+          },
+        },
+        {
+          provide: Router,
+          useValue: {
+            navigate: (commands: unknown[]) => {
+              navigatedTo = commands;
+              return Promise.resolve(true);
             },
           },
         },
@@ -156,5 +195,46 @@ describe('ConfirmationComponent', () => {
 
     expect(back).toBe(1);
     expect(checkoutData().currentStep).toBe('confirmation');
+  });
+
+  it('shows only Confirmar pedido for CASH and navigates to the persisted pedido', () => {
+    checkoutData.set({ ...createCheckoutData({ method: 'PICKUP' }), payment: { method: 'CASH' } });
+    createComponent();
+
+    expect(fixture.nativeElement.textContent).toContain('Confirmar pedido');
+    expect(fixture.nativeElement.textContent).not.toContain('Ir a pagar');
+
+    component.confirmCashOrder();
+    component.confirmCashOrder();
+
+    expect(createCalls).toEqual([{
+      personalInfo: checkoutData().personalInfo,
+      delivery: { method: 'PICKUP' },
+      paymentMethod: 'CASH',
+    }]);
+    expect(refreshedCart).toEqual({ id: 1, price: '0.00', items: [] });
+    expect(navigatedTo).toEqual(['/pedidos', 27]);
+    expect(fixture.nativeElement.textContent).not.toContain('Pedido creado correctamente');
+  });
+
+  it('shows only Ir a pagar for MERCADO_PAGO and does not create a pedido', () => {
+    createComponent();
+
+    expect(fixture.nativeElement.textContent).toContain('Ir a pagar');
+    expect(fixture.nativeElement.textContent).not.toContain('Confirmar pedido');
+    expect(createCalls).toEqual([]);
+  });
+
+  it('shows semantic creation errors and allows retrying', () => {
+    checkoutData.set({ ...createCheckoutData({ method: 'PICKUP' }), payment: { method: 'CASH' } });
+    createResponse = throwError(() => ({ error: { code: 'INSUFFICIENT_STOCK' } }));
+    createComponent();
+
+    component.confirmCashOrder();
+    expect(component.creationErrorMessage()).toContain('stock suficiente');
+    expect(component.isSubmitting()).toBe(false);
+
+    component.confirmCashOrder();
+    expect(createCalls).toHaveLength(2);
   });
 });

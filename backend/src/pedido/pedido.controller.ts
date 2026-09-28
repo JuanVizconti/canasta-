@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Req, UseGuards } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-request.interface';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreatePedidoDto } from './dto/create-pedido.dto';
@@ -16,6 +16,14 @@ export class PedidoController {
     @Body() quotePedidoDto: QuotePedidoDto,
   ) {
     return this.pedidoService.quote(request.user.id, quotePedidoDto);
+  }
+
+  @Get(':id')
+  findOne(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseIntPipe) pedidoId: number,
+  ) {
+    return this.pedidoService.findOneForUser(request.user.id, pedidoId);
   }
 
   @Post()
