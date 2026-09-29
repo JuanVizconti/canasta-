@@ -4,10 +4,12 @@ import { Router } from '@angular/router';
 import { catchError, throwError } from 'rxjs';
 import { AuthErrorResponse } from './model/auth.interface';
 import { AuthService } from './service/auth.service';
+import { OverlayService } from '../ui/overlay.service';
 
 export const authInterceptor: HttpInterceptorFn = (request, next) => {
   const authService = inject(AuthService);
   const router = inject(Router);
+  const overlayService = inject(OverlayService);
   const accessToken = localStorage.getItem('accessToken');
   const authenticatedRequest = accessToken
     ? request.clone({
@@ -21,7 +23,9 @@ export const authInterceptor: HttpInterceptorFn = (request, next) => {
 
       if (error.status === 401 && errorBody?.code === 'INVALID_SESSION') {
         authService.logout();
-        void router.navigate(['/login'], { state: { invalidSession: true, returnUrl: router.url } });
+        if (overlayService.activeOverlay() !== 'login') {
+          overlayService.openLogin(router.url, 'invalid-session');
+        }
       }
 
       return throwError(() => error);

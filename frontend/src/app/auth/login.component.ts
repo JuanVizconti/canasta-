@@ -1,9 +1,10 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthErrorResponse } from './model/auth.interface';
 import { AuthService } from './service/auth.service';
+import { OverlayService } from '../ui/overlay.service';
 
 @Component({
   selector: 'app-login',
@@ -12,28 +13,18 @@ import { AuthService } from './service/auth.service';
   styleUrl: './login.component.scss',
 })
 export class LoginComponent {
+  private readonly overlayService = inject(OverlayService);
+  readonly loginReason = this.overlayService.loginReason;
   email = '';
   password = '';
   isSubmitting = signal(false);
   successMessage = signal('');
   errorMessage = signal('');
-  sessionMessage = signal('');
-  private returnUrl='/';
 
   constructor(
     private readonly authService: AuthService,
     private readonly router: Router,
-  ) {
-    const state= this.router.getCurrentNavigation()?.extras.state;
-    
-    if (state?.['invalidSession'] === true) {
-      this.sessionMessage.set(
-        'Tu sesión expiró o dejó de ser válida. Iniciá sesión nuevamente.',
-      );
-    }
-
-    this.returnUrl = this.getSafeReturnUrl(state?.['returnUrl']);
-  }
+  ) {}
 
   submit(): void {
     this.isSubmitting.set(true);
@@ -42,11 +33,14 @@ export class LoginComponent {
 
     this.authService.login({ email: this.email, password: this.password }).subscribe({
       next: () => {
-        this.sessionMessage.set('');
         this.successMessage.set('Sesión iniciada.');
         this.isSubmitting.set(false);
 
-        void this.router.navigateByUrl(this.returnUrl);
+        const returnUrl = this.overlayService.consumeReturnUrl();
+        this.overlayService.close();
+        if (returnUrl !== null) {
+          void this.router.navigateByUrl(this.getSafeReturnUrl(returnUrl));
+        }
       },
       error: (error: HttpErrorResponse) => {
         const errorBody = error.error as Partial<AuthErrorResponse> | null;
@@ -66,25 +60,24 @@ export class LoginComponent {
   }
 
   close(): void {
-    void this.router.navigateByUrl('/');
+    this.overlayService.close();
   }
 
   goToRegister():void{
-    void this.router.navigate(['/register'],{
-      state:{
-        returnUrl: this.returnUrl,
-      },
-    });
+    this.overlayService.openRegister();
   }
 
   private getSafeReturnUrl(returnUrl:unknown):string{
     if (
       typeof returnUrl !== 'string'||
-      returnUrl == '/login'||
-      returnUrl == '/register'
+      !returnUrl.startsWith('/') ||
+      returnUrl.startsWith('//') ||
+      returnUrl === '/login' ||
+      returnUrl === '/register'
     ) {
       return '/';
     }
     return returnUrl;
   }
+
 }

@@ -1,17 +1,16 @@
 import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { of } from 'rxjs';
-import { LoginComponent } from './auth/login.component';
-import { RegisterComponent } from './auth/register.component';
 import { AuthService } from './auth/service/auth.service';
-import { CartComponent } from './cart/cart.component';
 import { CartService } from './cart/service/cart.service';
 import { CheckoutComponent } from './checkout/checkout.component';
 import { CheckoutService } from './checkout/service/checkout.service';
 import { PedidoComponent } from './pedido/pedido.component';
 import { PedidoService } from './pedido/service/pedido.service';
+import { ProductListComponent } from './product/product-list.component';
+import { ProductService } from './product/service/product.service';
 import { routes } from './app.routes';
 
 describe('app routes', () => {
@@ -32,7 +31,12 @@ describe('app routes', () => {
           useValue: {
             cart: signal(null).asReadonly(),
             getCart: () => of({ id: null, price: '0.00', items: [] }),
+            addItem: () => of({ id: null, price: '0.00', items: [] }),
           },
+        },
+        {
+          provide: ProductService,
+          useValue: { getProducts: () => of([]) },
         },
         {
           provide: CheckoutService,
@@ -68,31 +72,23 @@ describe('app routes', () => {
     });
   });
 
-  it('loads LoginComponent at /login', async () => {
+  it('loads ProductListComponent at /', async () => {
     const harness = await RouterTestingHarness.create();
 
-    await harness.navigateByUrl('/login', LoginComponent);
+    await harness.navigateByUrl('/', ProductListComponent);
 
-    expect(harness.routeNativeElement?.textContent).toContain('Iniciar sesión');
+    expect(harness.routeNativeElement).not.toBeNull();
   });
 
-  it('loads RegisterComponent at /register', async () => {
-    const harness = await RouterTestingHarness.create();
+  for (const legacyPath of ['/login', '/register', '/cart', '/unknown']) {
+    it(`redirects ${legacyPath} to the home route`, async () => {
+      const harness = await RouterTestingHarness.create();
 
-    await harness.navigateByUrl('/register', RegisterComponent);
+      await harness.navigateByUrl(legacyPath, ProductListComponent);
 
-    expect(harness.routeNativeElement?.textContent).toContain('Registrarse');
-  });
-
-  it('loads CartComponent at /cart', async () => {
-    const harness = await RouterTestingHarness.create();
-
-    await harness.navigateByUrl('/cart', CartComponent);
-
-    expect(harness.routeNativeElement?.textContent).toContain(
-      'Iniciá sesión para agregar productos al carrito.',
-    );
-  });
+      expect(TestBed.inject(Router).url).toBe('/');
+    });
+  }
 
   it('loads CheckoutComponent at /checkout', async () => {
     const harness = await RouterTestingHarness.create();

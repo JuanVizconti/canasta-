@@ -1,7 +1,8 @@
-import { Component, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService } from './service/auth.service';
+import { OverlayService } from '../ui/overlay.service';
 
 @Component({
   selector: 'app-register',
@@ -10,22 +11,18 @@ import { AuthService } from './service/auth.service';
   styleUrl: './register.component.scss',
 })
 export class RegisterComponent {
+  private readonly overlayService = inject(OverlayService);
   usuario = '';
   email = '';
   password = '';
   isSubmitting = signal(false);
   successMessage = signal('');
   errorMessage = signal('');
-  private returnUrl = '/';
 
   constructor(
     private readonly authService: AuthService,
     private readonly router: Router,
-  ) {
-    const state= this.router.getCurrentNavigation()?.extras.state;
-
-    this.returnUrl= this.getSafeReturnUrl(state?.['returnUrl']);
-  }
+  ) {}
 
   submit(): void {
     this.isSubmitting.set(true);
@@ -39,7 +36,11 @@ export class RegisterComponent {
           this.successMessage.set('Registro exitoso.');
           this.isSubmitting.set(false);
 
-          void this.router.navigateByUrl(this.returnUrl);
+          const returnUrl = this.overlayService.consumeReturnUrl();
+          this.overlayService.close();
+          if (returnUrl !== null) {
+            void this.router.navigateByUrl(this.getSafeReturnUrl(returnUrl));
+          }
         },
         error: () => {
           this.errorMessage.set('No se pudo completar el registro.');
@@ -49,20 +50,18 @@ export class RegisterComponent {
   }
 
   goToLogin():void{
-    void this.router.navigate(['/login'],{
-      state:{
-        returnUrl: this.returnUrl,
-      },
-    });
+    this.overlayService.openLogin();
   }
 
   close(): void {
-    void this.router.navigateByUrl('/');
+    this.overlayService.close();
   }
 
   private getSafeReturnUrl(returnUrl: unknown):string{
     if(
       typeof returnUrl!== 'string' ||
+      !returnUrl.startsWith('/') ||
+      returnUrl.startsWith('//') ||
       returnUrl === '/login' ||
       returnUrl === '/register'
     ){
@@ -70,4 +69,5 @@ export class RegisterComponent {
     }
     return returnUrl;
   }
+
 }

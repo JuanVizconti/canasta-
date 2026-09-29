@@ -6,6 +6,7 @@ import { AuthService } from '../auth/service/auth.service';
 import { Cart } from './model/cart.interface';
 import { CartComponent } from './cart.component';
 import { CartService } from './service/cart.service';
+import { OverlayService } from '../ui/overlay.service';
 
 describe('CartComponent', () => {
   let fixture: ComponentFixture<CartComponent>;
@@ -77,6 +78,10 @@ describe('CartComponent', () => {
               navigatedTo = url;
               return Promise.resolve(true);
             },
+            navigate: (commands: string[]) => {
+              navigatedTo = commands[0];
+              return Promise.resolve(true);
+            },
           },
         },
       ],
@@ -133,13 +138,26 @@ describe('CartComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Continuar con la compra');
   });
 
-  it('navigates to checkout when continuing with a cart that has items', () => {
+  it('closes the cart overlay and navigates to checkout when continuing with items', () => {
     getCartResult = of(cartWithItems);
     fixture.detectChanges();
+    const overlayService = TestBed.inject(OverlayService);
+    overlayService.openCart();
 
     component.continueToCheckout();
 
+    expect(overlayService.activeOverlay()).toBeNull();
     expect(navigatedTo).toBe('/checkout');
+  });
+
+  it('closes the overlay without navigating', () => {
+    const overlayService = TestBed.inject(OverlayService);
+    overlayService.openCart();
+
+    component.close();
+
+    expect(overlayService.activeOverlay()).toBeNull();
+    expect(navigatedTo).toBeUndefined();
   });
 
   it('updates the cart signal after changing an item quantity', () => {

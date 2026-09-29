@@ -1,6 +1,7 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthService } from '../auth/service/auth.service';
+import { OverlayService } from '../ui/overlay.service';
 import { CartService } from './service/cart.service';
 
 @Component({
@@ -12,6 +13,7 @@ export class CartComponent implements OnInit {
   private readonly cartService = inject(CartService);
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly overlayService = inject(OverlayService);
 
   readonly isAuthenticated = this.authService.isAuthenticated;
   cart = this.cartService.cart;
@@ -26,11 +28,12 @@ export class CartComponent implements OnInit {
   }
 
   close(): void {
-    void this.router.navigateByUrl('/');
+    this.overlayService.close();
   }
 
   continueToCheckout(): void {
-    void this.router.navigateByUrl('/checkout');
+    this.overlayService.close();
+    void this.router.navigate(['/checkout']);
   }
 
   addItem(productId: number, cantidad = 1): void {
