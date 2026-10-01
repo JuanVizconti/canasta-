@@ -1,4 +1,5 @@
 import { BadRequestException, HttpStatus, Injectable, NotFoundException, OnModuleDestroy } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
 import {
   DeliveryMethod as PrismaDeliveryMethod,
@@ -9,6 +10,7 @@ import {
   PrismaClient,
 } from '@prisma/client';
 import { CartService } from '../cart/cart.service';
+import { MercadoPagoService } from '../mercado-pago/mercado-pago.service';
 import { CreatePedidoDto } from './dto/create-pedido.dto';
 import { DeliveryMethod } from './interfaces/delivery-method.enum';
 import { QuotePedidoDto } from './dto/quote-pedido.dto';
@@ -21,8 +23,13 @@ export class PedidoService implements OnModuleDestroy {
   private static readonly minimumPurchase = new Prisma.Decimal(10000);
   private static readonly serviceFee = new Prisma.Decimal(500);
   private static readonly deliveryPercentage = new Prisma.Decimal('0.10');
+  private static readonly paymentExpirationMinutes = 30;
+  private static readonly mercadoPagoExpirationTime = 'PT30M';
 
-  constructor(private readonly cartService: CartService) {
+  constructor(
+    private readonly cartService: CartService,
+    private readonly mercadoPagoService: MercadoPagoService,
+  ) {
     const connectionString = process.env.DATABASE_URL;
 
     if (!connectionString) {
@@ -40,11 +47,7 @@ export class PedidoService implements OnModuleDestroy {
         return this.createCashPedido(userId, createPedidoDto);
 
       case PaymentMethod.MERCADO_PAGO:
-        throw new BadRequestException({
-          statusCode: HttpStatus.BAD_REQUEST,
-          code: PedidoErrorCode.PAYMENT_METHOD_NOT_SUPPORTED,
-          message: 'El pago con Mercado Pago todavia no esta disponible.',
-        });
+        return this.createMercadoPagoPedido(userId, createPedidoDto);
     }
   }
 
@@ -141,6 +144,125 @@ export class PedidoService implements OnModuleDestroy {
       return this.mapCreatedPedido(pedido);
     });
   }
+
+  private async createMercadoPagoPedido(
+    userId: number, createPedidoDto: CreatePedidoDto,
+  ) {
+    const idempotencyKey = randomUUID();
+    
+    const expiresAt = new Date(
+      Date.now() + PedidoService.paymentExpirationMinutes * 60 * 1000,
+    );
+    
+    const pedido = await this.prisma.$transaction(async (transaction) => {
+    
+    const cart = await this.getCartForCheckout(transaction, userId);
+    
+    const subtotal = this.calculateSubtotal(cart?.items ?? []);
+    
+    const pricing = this.calculatePricing(subtotal, createPedidoDto.delivery.method);
+
+    const pendingPedido = await transaction.pedido.create({
+      data: {
+        userId,
+        ...createPedidoDto.personalInfo,
+        
+        deliveryMethod: this.toPrismaDeliveryMethod(createPedidoDto.delivery.method),
+        ...this.getDeliveryAddress(createPedidoDto.delivery),
+        
+        subtotal: pricing.subtotal,
+        serviceFee: pricing.serviceFee,
+        deliveryFee: pricing.deliveryFee,
+        total: pricing.total,
+        
+        estado: PedidoEstado.PENDING,
+        
+        expiresAt,
+        
+        items: {
+          create: this.biuldPedidoItems(cart?.items ?? []),
+        },
+        
+        payment: {
+          create: {
+            method: PaymentMethod.MERCADO_PAGO,
+            status: PaymentStatus.PENDING,
+            providerOrderId: null,
+            idempotencyKey,
+            checkoutUrl: null,
+          },
+        },
+      },
+      
+      select: {
+        id: true,
+        estado: true,
+        total: true,
+        user: { select: { email: true } },       
+        payment: {
+          select: {
+            method: true,
+            status: true,
+            idempotencyKey: true,
+          },
+        },
+      },
+    });
+
+    await this.decrementStock(transaction, cart?.items ?? []);
+
+    await this.clearCart(transaction, cart);
+
+    return pendingPedido;
+  });
+
+  const payment = pedido.payment;
+  if (!payment?.idempotencyKey) {
+    throw new Error('Mercado Pago payment was created without an idempotency key');
+  }
+
+  try {
+    const order = await this.mercadoPagoService.createOrder({
+      pedidoId: pedido.id,
+      idempotencyKey: payment.idempotencyKey,
+      total: pedido.total.toFixed(2),
+      expirationTime: PedidoService.mercadoPagoExpirationTime,
+      payerEmail: pedido.user.email,      
+    });
+
+    await this.prisma.payment.update({
+      where: { pedidoId: pedido.id },
+      data: {
+        providerOrderId: order.providerOrderId,
+        checkoutUrl: order.checkoutUrl,
+      },
+    });
+
+    return {
+      id: pedido.id,
+      estado: pedido.estado,
+      total: pedido.total.toFixed(2),
+      payment: {
+        method: payment.method,
+        status: payment.status,
+        checkoutUrl: order.checkoutUrl,
+      },
+      paymentInitialization: { status: 'READY' as const },
+    };
+  } catch {
+    return {
+      id: pedido.id,
+      estado: pedido.estado,
+      total: pedido.total.toFixed(2),
+      payment: {
+        method: payment.method,
+        status: payment.status,
+        checkoutUrl: null,
+      },
+      paymentInitialization: { status: 'FAILED' as const },
+    };
+  }
+}
   
   async onModuleDestroy() {
     await this.prisma.$disconnect();

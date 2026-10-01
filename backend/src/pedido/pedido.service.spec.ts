@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
-import { PaymentMethod, PedidoEstado, Prisma } from '@prisma/client';
+import { PaymentMethod, PaymentStatus, PedidoEstado, Prisma } from '@prisma/client';
 import { CartService } from '../cart/cart.service';
+import { MercadoPagoService } from '../mercado-pago/mercado-pago.service';
 import { CreatePedidoDto } from './dto/create-pedido.dto';
 import { QuotePedidoDto } from './dto/quote-pedido.dto';
 import { DeliveryMethod } from './interfaces/delivery-method.enum';
@@ -29,7 +30,13 @@ describe('PedidoService', () => {
     const cartService = {
       getSubtotalForUser: jest.fn().mockResolvedValue(new Prisma.Decimal(subtotal)),
     } as unknown as CartService;
-    return { service: new PedidoService(cartService), cartService };
+    const mercadoPagoService = {
+      createOrder: jest.fn().mockResolvedValue({
+        providerOrderId: 'mp-order-27',
+        checkoutUrl: 'https://mercadopago.example/checkout/27',
+      }),
+    } as unknown as MercadoPagoService;
+    return { service: new PedidoService(cartService, mercadoPagoService), cartService, mercadoPagoService };
   };
 
   const cartWithProduct = (price = '20000.00') => ({
@@ -40,20 +47,26 @@ describe('PedidoService', () => {
     }],
   });
 
-  const configureTransaction = (service: PedidoService, cart = cartWithProduct(), updatedProducts = 1) => {
+  const configureTransaction = (
+    service: PedidoService,
+    cart = cartWithProduct(),
+    updatedProducts = 1,
+    pedidoResult = {
+      id: 27, estado: PedidoEstado.CONFIRMED, total: new Prisma.Decimal('44500.00'),
+      payment: { method: PaymentMethod.CASH, status: PaymentStatus.PENDING },
+    },
+  ) => {
     const transaction = {
       cart: { findUnique: jest.fn().mockResolvedValue(cart), update: jest.fn().mockResolvedValue({}) },
       product: { updateMany: jest.fn().mockResolvedValue({ count: updatedProducts }) },
       pedido: {
-        create: jest.fn().mockResolvedValue({
-          id: 27, estado: PedidoEstado.CONFIRMED, total: new Prisma.Decimal('44500.00'),
-          payment: { method: PaymentMethod.CASH, status: 'PENDING' },
-        }),
+        create: jest.fn().mockResolvedValue(pedidoResult),
       },
       cartItem: { deleteMany: jest.fn().mockResolvedValue({ count: 1 }) },
     };
     const prisma = {
       $transaction: jest.fn((callback: (client: typeof transaction) => unknown) => callback(transaction)),
+      payment: { update: jest.fn().mockResolvedValue({}) },
     };
     (service as unknown as { prisma: typeof prisma }).prisma = prisma;
     return { prisma, transaction };
@@ -61,7 +74,7 @@ describe('PedidoService', () => {
 
   it('creates a confirmed CASH pedido from the real cart and clears that cart atomically', async () => {
     const { service } = createService();
-    const { transaction } = configureTransaction(service);
+    const { prisma, transaction } = configureTransaction(service);
 
     await expect(service.create(7, createPedidoDto)).resolves.toEqual({
       id: 27, estado: PedidoEstado.CONFIRMED, total: '44500.00',
@@ -71,6 +84,7 @@ describe('PedidoService', () => {
     expect(transaction.cart.findUnique).toHaveBeenCalledWith({
       where: { userId: 7 }, include: { items: { include: { product: true } } },
     });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(transaction.product.updateMany).toHaveBeenCalledWith({
       where: { id: 4, stock: { gte: 2 } }, data: { stock: { decrement: 2 } },
     });
@@ -104,13 +118,109 @@ describe('PedidoService', () => {
     }));
   });
 
-  it('rejects MERCADO_PAGO without entering the CASH transaction', async () => {
-    const { service } = createService();
-    const { prisma } = configureTransaction(service);
+  it('creates a pending MERCADO_PAGO pedido, reserves stock and initializes the provider order after commit', async () => {
+    const { service, mercadoPagoService } = createService();
+    const pendingPedido = {
+      id: 42,
+      estado: PedidoEstado.PENDING,
+      total: new Prisma.Decimal('44500.00'),
+      user: { email: 'juan@email.com' },
+      items: [{ nombre: 'Arroz', marca: 'Canasta', cantidad: 2, unitPrice: new Prisma.Decimal('20000.00') }],
+      payment: { method: PaymentMethod.MERCADO_PAGO, status: PaymentStatus.PENDING, idempotencyKey: 'key-42' },
+    };
+    const { prisma, transaction } = configureTransaction(service, cartWithProduct(), 1, pendingPedido);
 
     await expect(service.create(7, { ...createPedidoDto, paymentMethod: PaymentMethod.MERCADO_PAGO }))
-      .rejects.toMatchObject({ response: { code: PedidoErrorCode.PAYMENT_METHOD_NOT_SUPPORTED } });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+      .resolves.toEqual({
+        id: 42,
+        estado: PedidoEstado.PENDING,
+        total: '44500.00',
+        payment: {
+          method: PaymentMethod.MERCADO_PAGO,
+          status: PaymentStatus.PENDING,
+          checkoutUrl: 'https://mercadopago.example/checkout/27',
+        },
+        paymentInitialization: { status: 'READY' },
+      });
+
+    const createdData = transaction.pedido.create.mock.calls[0][0].data;
+    expect(createdData).toEqual(expect.objectContaining({
+      estado: PedidoEstado.PENDING,
+      expiresAt: expect.any(Date),
+      payment: {
+        create: expect.objectContaining({
+          method: PaymentMethod.MERCADO_PAGO,
+          status: PaymentStatus.PENDING,
+          providerOrderId: null,
+          checkoutUrl: null,
+          idempotencyKey: expect.any(String),
+        }),
+      },
+    }));
+    expect(transaction.product.updateMany).toHaveBeenCalledWith({
+      where: { id: 4, stock: { gte: 2 } }, data: { stock: { decrement: 2 } },
+    });
+    expect(transaction.cartItem.deleteMany).not.toHaveBeenCalled();
+    expect(transaction.cart.update).not.toHaveBeenCalled();
+    expect(mercadoPagoService.createOrder).toHaveBeenCalledWith({
+      pedidoId: 42,
+      idempotencyKey: 'key-42',
+      total: '44500.00',
+      expirationTime: 'PT30M',
+      payerEmail: 'juan@email.com',
+      items: [{ title: 'Arroz', unitPrice: '20000.00', quantity: 2 }],
+    });
+    expect(prisma.payment.update).toHaveBeenCalledWith({
+      where: { pedidoId: 42 },
+      data: {
+        providerOrderId: 'mp-order-27',
+        checkoutUrl: 'https://mercadopago.example/checkout/27',
+      },
+    });
+  });
+
+  it('rolls back the local transaction and does not call Mercado Pago when stock is insufficient', async () => {
+    const { service, mercadoPagoService } = createService();
+    const pendingPedido = {
+      id: 42, estado: PedidoEstado.PENDING, total: new Prisma.Decimal('44500.00'),
+      user: { email: 'juan@email.com' }, items: [],
+      payment: { method: PaymentMethod.MERCADO_PAGO, status: PaymentStatus.PENDING, idempotencyKey: 'key-42' },
+    };
+    const { transaction } = configureTransaction(service, cartWithProduct(), 0, pendingPedido);
+
+    await expect(service.create(7, { ...createPedidoDto, paymentMethod: PaymentMethod.MERCADO_PAGO }))
+      .rejects.toMatchObject({ response: { code: PedidoErrorCode.INSUFFICIENT_STOCK } });
+
+    expect(transaction.pedido.create).toHaveBeenCalledTimes(1);
+    expect(mercadoPagoService.createOrder).not.toHaveBeenCalled();
+    expect(transaction.cartItem.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('keeps the pending pedido, reserved stock and cart when Mercado Pago fails after commit', async () => {
+    const { service, mercadoPagoService } = createService();
+    const pendingPedido = {
+      id: 42,
+      estado: PedidoEstado.PENDING,
+      total: new Prisma.Decimal('44500.00'),
+      user: { email: 'juan@email.com' },
+      items: [{ nombre: 'Arroz', marca: 'Canasta', cantidad: 2, unitPrice: new Prisma.Decimal('20000.00') }],
+      payment: { method: PaymentMethod.MERCADO_PAGO, status: PaymentStatus.PENDING, idempotencyKey: 'key-42' },
+    };
+    const { prisma, transaction } = configureTransaction(service, cartWithProduct(), 1, pendingPedido);
+    jest.spyOn(mercadoPagoService, 'createOrder').mockRejectedValue(new Error('provider unavailable'));
+
+    await expect(service.create(7, { ...createPedidoDto, paymentMethod: PaymentMethod.MERCADO_PAGO }))
+      .resolves.toEqual({
+        id: 42,
+        estado: PedidoEstado.PENDING,
+        total: '44500.00',
+        payment: { method: PaymentMethod.MERCADO_PAGO, status: PaymentStatus.PENDING, checkoutUrl: null },
+        paymentInitialization: { status: 'FAILED' },
+      });
+
+    expect(prisma.payment.update).not.toHaveBeenCalled();
+    expect(transaction.cartItem.deleteMany).not.toHaveBeenCalled();
+    expect(transaction.cart.update).not.toHaveBeenCalled();
   });
 
   it('does not create anything when the subtotal is below the minimum', async () => {
@@ -124,13 +234,17 @@ describe('PedidoService', () => {
     expect(transaction.cartItem.deleteMany).not.toHaveBeenCalled();
   });
 
-  it('stops the transaction path when conditional stock decrement fails', async () => {
+  it('rejects the transaction and does not clear the cart when conditional stock decrement fails', async () => {
     const { service } = createService();
-    const { transaction } = configureTransaction(service, cartWithProduct(), 0);
+    const { prisma, transaction } = configureTransaction(service, cartWithProduct(), 0);
 
     await expect(service.create(7, createPedidoDto))
       .rejects.toMatchObject({ response: { code: PedidoErrorCode.INSUFFICIENT_STOCK } });
-    expect(transaction.pedido.create).not.toHaveBeenCalled();
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(transaction.pedido.create).toHaveBeenCalledTimes(1);
+    expect(transaction.product.updateMany).toHaveBeenCalledWith({
+      where: { id: 4, stock: { gte: 2 } }, data: { stock: { decrement: 2 } },
+    });
     expect(transaction.cartItem.deleteMany).not.toHaveBeenCalled();
     expect(transaction.cart.update).not.toHaveBeenCalled();
   });

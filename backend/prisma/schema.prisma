@@ -32,30 +32,30 @@ enum PaymentStatus {
 }
 
 model Product {
-  id        Int        @id @default(autoincrement())
-  marca     String
-  nombre    String
-  precio    Decimal    @db.Decimal(10, 2)
-  stock     Int
-  imgUrl    String?
-  cartItems CartItem[]
+  id          Int          @id @default(autoincrement())
+  marca       String
+  nombre      String
+  precio      Decimal      @db.Decimal(10, 2)
+  stock       Int
+  imgUrl      String?
+  cartItems   CartItem[]
   pedidoItems PedidoItem[]
 }
 
 model User {
-  id           Int    @id @default(autoincrement())
+  id           Int      @id @default(autoincrement())
   usuario      String
-  email        String @unique
+  email        String   @unique
   passwordHash String
   cart         Cart?
   pedidos      Pedido[]
 }
 
 model Cart {
-  id     Int      @id @default(autoincrement())
-  userId Int      @unique
-  price  Decimal  @db.Decimal(10, 2)
-  user   User     @relation(fields: [userId], references: [id])
+  id     Int        @id @default(autoincrement())
+  userId Int        @unique
+  price  Decimal    @db.Decimal(10, 2)
+  user   User       @relation(fields: [userId], references: [id])
   items  CartItem[]
 }
 
@@ -91,6 +91,7 @@ model Pedido {
   total            Decimal        @default(0) @db.Decimal(10, 2)
   estado           PedidoEstado
   createdAt        DateTime       @default(now())
+  expiresAt        DateTime?
   user             User           @relation(fields: [userId], references: [id])
   items            PedidoItem[]
   payment          Payment?
@@ -114,6 +115,8 @@ model Payment {
   method          PaymentMethod
   status          PaymentStatus
   providerOrderId String?
+  idempotencyKey  String?       @unique
+  checkoutUrl     String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   pedido          Pedido        @relation(fields: [pedidoId], references: [id])

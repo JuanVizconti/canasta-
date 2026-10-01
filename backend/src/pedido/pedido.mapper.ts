@@ -50,9 +50,10 @@ export class PedidoMapper {
       total: pedido.total.toFixed(2),
       payment: pedido.payment
         ? {
-            method: pedido.payment.method,
-            status: pedido.payment.status,
-          }
+          method: pedido.payment.method,
+          status: pedido.payment.status,
+          checkoutUrl: pedido.payment.checkoutUrl,
+        }
         : null,
     };
   }

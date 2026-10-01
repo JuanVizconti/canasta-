@@ -23,6 +23,7 @@ describe('PedidoMapper', () => {
     total: new Prisma.Decimal('22500'),
     estado: PedidoEstado.CONFIRMED,
     createdAt: new Date('2026-09-28T18:30:00.000Z'),
+    expiresAt: null,
     items: [{
       id: 1,
       pedidoId: 27,
@@ -38,6 +39,8 @@ describe('PedidoMapper', () => {
       method: PaymentMethod.CASH,
       status: PaymentStatus.PENDING,
       providerOrderId: null,
+      idempotencyKey: null,
+      checkoutUrl: null,
       createdAt: new Date('2026-09-28T18:30:00.000Z'),
       updatedAt: new Date('2026-09-28T18:30:00.000Z'),
     },
@@ -60,7 +63,7 @@ describe('PedidoMapper', () => {
         productId: 11, nombre: 'Coca-Cola 2.25L', marca: 'Coca-Cola', cantidad: 2, unitPrice: '2500.50',
       }],
       subtotal: '20000.00', serviceFee: '500.00', deliveryFee: '2000.00', total: '22500.00',
-      payment: { method: PaymentMethod.CASH, status: PaymentStatus.PENDING },
+      payment: { method: PaymentMethod.CASH, status: PaymentStatus.PENDING, checkoutUrl: null },
     });
   });
 
