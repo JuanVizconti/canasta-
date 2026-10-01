@@ -1,15 +1,17 @@
 import { Injectable } from '@nestjs/common';
-import { CreateMercadoPagoOrderInput, MercadoPagoOrderResult } from './mercado-pago.types';
+import {
+  CreateMercadoPagoOrderInput,
+  MercadoPagoOrderResult,
+} from './mercado-pago.types';
 
 const MERCADO_PAGO_ORDERS_URL = 'https://api.mercadopago.com/v1/orders';
 const MERCADO_PAGO_REQUEST_TIMEOUT_MS = 10_000;
 
 @Injectable()
 export class MercadoPagoService {
-  
   async createOrder(
-    input: CreateMercadoPagoOrderInput,): Promise<MercadoPagoOrderResult> 
-    {
+    input: CreateMercadoPagoOrderInput,
+  ): Promise<MercadoPagoOrderResult> {
     const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
 
     if (!accessToken) {
@@ -30,12 +32,14 @@ export class MercadoPagoService {
         external_reference: String(input.pedidoId),
         total_amount: input.total,
         expiration_time: input.expirationTime,
-        payer: { email: input.payerEmail },        
+        payer: { email: input.payerEmail },
       }),
     });
 
     if (!response.ok) {
-      throw new Error(`Mercado Pago order creation failed with status ${response.status}`);
+      throw new Error(
+        `Mercado Pago order creation failed with status ${response.status}`,
+      );
     }
 
     const data: unknown = await response.json();
@@ -57,6 +61,9 @@ export class MercadoPagoService {
     }
 
     const response = value as Record<string, unknown>;
-    return typeof response['id'] === 'string' && typeof response['checkout_url'] === 'string';
+    return (
+      typeof response['id'] === 'string' &&
+      typeof response['checkout_url'] === 'string'
+    );
   }
 }

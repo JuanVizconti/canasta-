@@ -71,6 +71,89 @@ export class PedidoService implements OnModuleDestroy {
     return PedidoMapper.toDetail(pedido);
   }
 
+  async retryMercadoPagoPayment(userId: number, pedidoId: number) {
+    const pedido = await this.prisma.pedido.findFirst({
+      where: { id: pedidoId, userId },
+      select: {
+        id: true,
+        estado: true,
+        total: true,
+        createdAt: true,
+        expiresAt: true,
+        user: { select: { email: true } },
+        payment: {
+          select: {
+            method: true,
+            status: true,
+            idempotencyKey: true,
+            providerOrderId: true,
+            checkoutUrl: true,
+          },
+        },
+      },
+    });
+
+    if (!pedido) {
+      throw new NotFoundException({
+        statusCode: HttpStatus.NOT_FOUND,
+        code: PedidoErrorCode.PEDIDO_NOT_FOUND,
+        message: 'Pedido no encontrado.',
+      });
+    }
+
+    const payment = pedido.payment;
+    if (
+      pedido.estado !== PedidoEstado.PENDING ||
+      !payment ||
+      payment.method !== PaymentMethod.MERCADO_PAGO ||
+      payment.status !== PaymentStatus.PENDING ||
+      !payment.idempotencyKey ||
+      !pedido.expiresAt
+    ) {
+      throw this.paymentRetryNotAllowed();
+    }
+
+    if (pedido.expiresAt.getTime() <= Date.now()) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        code: PedidoErrorCode.PAYMENT_EXPIRED,
+        message: 'El pedido ya expiró y no puede reintentar el pago.',
+      });
+    }
+
+    if (payment.checkoutUrl) {
+      return this.mercadoPagoRetryResponse(pedido, payment.checkoutUrl, 'READY');
+    }
+  
+    const idempotencyKey = randomUUID();
+    await this.prisma.payment.update({
+      where: { pedidoId: pedido.id },
+      data: { idempotencyKey },
+    });
+
+    try {
+      const order = await this.mercadoPagoService.createOrder({
+        pedidoId: pedido.id,
+        idempotencyKey,
+        total: pedido.total.toFixed(2),
+        expirationTime: this.remainingExpirationTime(pedido.expiresAt),
+        payerEmail: pedido.user.email,
+      });
+
+      await this.prisma.payment.update({
+        where: { pedidoId: pedido.id },
+        data: {
+          providerOrderId: order.providerOrderId,
+          checkoutUrl: order.checkoutUrl,
+        },
+      });
+
+      return this.mercadoPagoRetryResponse(pedido, order.checkoutUrl, 'READY');
+    } catch {
+      return this.mercadoPagoRetryResponse(pedido, null, 'FAILED');
+    }
+  }
+
   async quote(userId: number, { deliveryMethod }: QuotePedidoDto) {
     const subtotal = await this.cartService.getSubtotalForUser(userId);
     const pricing = this.calculatePricing(subtotal, deliveryMethod);
@@ -80,6 +163,42 @@ export class PedidoService implements OnModuleDestroy {
       serviceFee: pricing.serviceFee.toFixed(2),
       deliveryFee: pricing.deliveryFee.toFixed(2),
       total: pricing.total.toFixed(2),
+    };
+  }
+
+  private paymentRetryNotAllowed() {
+    return new BadRequestException({
+      statusCode: HttpStatus.BAD_REQUEST,
+      code: PedidoErrorCode.PAYMENT_RETRY_NOT_ALLOWED,
+      message: 'El pago del pedido no puede reintentarse.',
+    });
+  }
+
+  private remainingExpirationTime(expiresAt: Date): string {
+    const remainingSeconds = Math.ceil((expiresAt.getTime() - Date.now()) / 1000);
+    const minutes = Math.floor(remainingSeconds / 60);
+    const seconds = remainingSeconds % 60;
+
+    return seconds === 0 ? `PT${minutes}M` : `PT${minutes}M${seconds}S`;
+  }
+
+  private mercadoPagoRetryResponse(
+    pedido: { id: number; estado: PedidoEstado; total: Prisma.Decimal; payment: { method: PaymentMethod; status: PaymentStatus } | null },
+    checkoutUrl: string | null,
+    paymentInitializationStatus: 'READY' | 'FAILED',
+  ) {
+    return {
+      id: pedido.id,
+      estado: pedido.estado,
+      total: pedido.total.toFixed(2),
+      payment: pedido.payment
+        ? {
+            method: pedido.payment.method,
+            status: pedido.payment.status,
+            checkoutUrl,
+          }
+        : null,
+      paymentInitialization: { status: paymentInitializationStatus },
     };
   }
 

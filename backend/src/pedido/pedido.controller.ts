@@ -26,6 +26,14 @@ export class PedidoController {
     return this.pedidoService.findOneForUser(request.user.id, pedidoId);
   }
 
+  @Post(':id/payment/retry')
+  retryMercadoPagoPayment(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseIntPipe) pedidoId: number,
+  ) {
+    return this.pedidoService.retryMercadoPagoPayment(request.user.id, pedidoId);
+  }
+
   @Post()
   create(
     @Req() request: AuthenticatedRequest,

@@ -7,7 +7,6 @@ describe('MercadoPagoService', () => {
     total: '44500.00',
     expirationTime: 'PT30M',
     payerEmail: 'juan@email.com',
-    items: [{ title: 'Arroz', unitPrice: '20000.00', quantity: 2 }],
   };
   const originalFetch = global.fetch;
 
@@ -52,16 +51,9 @@ describe('MercadoPagoService', () => {
       type: 'online',
       processing_mode: 'manual',
       external_reference: '42',
-      total_amount: 44500,
+      total_amount: '44500.00',
       expiration_time: 'PT30M',
       payer: { email: 'juan@email.com' },
-      items: [{
-        title: 'Arroz',
-        unit_price: 20000,
-        quantity: 2,
-        unit_measure: 'unit',
-        total_amount: 40000,
-      }],
     });
   });
 
@@ -101,5 +93,65 @@ describe('MercadoPagoService', () => {
     await expect(service.createOrder(input)).rejects.toThrow(
       'MERCADO_PAGO_ACCESS_TOKEN is required',
     );
+  });
+
+  it('finds an existing order through its stable external reference', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: jest.fn().mockResolvedValue({
+        data: [{
+          id: 'mp-order-42',
+          checkout_url: 'https://mercadopago.example/checkout/42',
+        }],
+      }),
+    });
+    global.fetch = fetchMock;
+    const service = new MercadoPagoService();
+
+    await expect(service.findOrderByExternalReference({
+      pedidoId: 42,
+      beginDate: new Date('2026-10-01T13:00:00.000Z'),
+      endDate: new Date('2026-10-01T13:30:00.000Z'),
+    })).resolves.toEqual({
+      providerOrderId: 'mp-order-42',
+      checkoutUrl: 'https://mercadopago.example/checkout/42',
+    });
+
+    const url = new URL(fetchMock.mock.calls[0][0] as string);
+    expect(`${url.origin}${url.pathname}`).toBe('https://api.mercadopago.com/v1/orders');
+    expect(url.searchParams.get('begin_date')).toBe('2026-10-01T13:00:00.000Z');
+    expect(url.searchParams.get('end_date')).toBe('2026-10-01T13:30:00.000Z');
+    expect(url.searchParams.get('external_reference')).toBe('42');
+    expect(fetchMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      method: 'GET',
+      headers: { Authorization: 'Bearer test-access-token' },
+    }));
+  });
+
+  it('returns null when no order matches the external reference', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: jest.fn().mockResolvedValue({ data: [] }),
+    });
+    const service = new MercadoPagoService();
+
+    await expect(service.findOrderByExternalReference({
+      pedidoId: 42,
+      beginDate: new Date('2026-10-01T13:00:00.000Z'),
+      endDate: new Date('2026-10-01T13:30:00.000Z'),
+    })).resolves.toBeNull();
+  });
+
+  it('rejects order-search HTTP failures without exposing the access token', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 500 });
+    const service = new MercadoPagoService();
+
+    await expect(service.findOrderByExternalReference({
+      pedidoId: 42,
+      beginDate: new Date('2026-10-01T13:00:00.000Z'),
+      endDate: new Date('2026-10-01T13:30:00.000Z'),
+    })).rejects.toThrow('Mercado Pago order search failed with status 500');
   });
 });
