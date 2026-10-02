@@ -3,6 +3,7 @@ import {
   PaymentMethod,
   PersonalInfo,
 } from '../../checkout/model/checkout.interface';
+import { PedidoEstado, PedidoPaymentMethod, PedidoPaymentStatus } from './pedido.interface';
 
 export interface CreatePedidoRequest {
   personalInfo: PersonalInfo;
@@ -12,10 +13,14 @@ export interface CreatePedidoRequest {
 
 export interface CreatedPedido {
   id: number;
-  estado: string;
+  estado: PedidoEstado;
   total: string;
   payment: {
-    method: PaymentMethod;
-    status: string;
+    method: PedidoPaymentMethod;
+    status: PedidoPaymentStatus;
+    checkoutUrl?: string | null;
+  };
+  paymentInitialization?: {
+    status: 'READY' | 'FAILED';
   };
 }

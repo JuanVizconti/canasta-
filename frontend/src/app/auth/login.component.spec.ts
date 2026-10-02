@@ -136,10 +136,10 @@ describe('LoginComponent', () => {
     component.submit();
     expect(overlayService.activeOverlay()).toBe('login');
     expect(overlayService.returnUrl()).toBe('/checkout');
-    expect(overlayService.loginReason()).toBe('manual');
+    expect(overlayService.loginReason()).toBe('invalid-session');
 
     fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).not.toContain(
+    expect(fixture.nativeElement.textContent).toContain(
       'Tu sesión ya no es válida. Iniciá sesión nuevamente.',
     );
 

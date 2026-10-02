@@ -1,14 +1,16 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
+import { environment } from '../../../enviroments/enviroment';
 import { DeliveryMethod } from '../../checkout/model/checkout.interface';
 import { CreatedPedido, CreatePedidoRequest } from '../model/create-pedido.interface';
 import { PedidoQuote } from '../model/pedido-quote.interface';
-import { Pedido } from '../model/pedido.interface';
+import { Pedido, RetryPaymentResponse } from '../model/pedido.interface';
 
 @Injectable({ providedIn: 'root' })
 export class PedidoService {
-  private readonly pedidosUrl = 'http://localhost:3000/pedidos';
+  private readonly apiUrl = environment.apiUrl;
+  private readonly pedidosUrl = `${this.apiUrl}/pedidos`;
 
   constructor(private readonly http: HttpClient) {}
 
@@ -22,5 +24,12 @@ export class PedidoService {
 
   getById(id: number): Observable<Pedido> {
     return this.http.get<Pedido>(`${this.pedidosUrl}/${id}`);
+  }
+
+  retryPayment(id: number): Observable<RetryPaymentResponse> {
+    return this.http.post<RetryPaymentResponse>(
+      `${this.pedidosUrl}/${id}/payment/retry`,
+      {},
+    );
   }
 }

@@ -1,9 +1,10 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { environment } from '../../../enviroments/enviroment';
 import { PedidoQuote } from '../model/pedido-quote.interface';
 import { CreatePedidoRequest, CreatedPedido } from '../model/create-pedido.interface';
-import { Pedido } from '../model/pedido.interface';
+import { Pedido, RetryPaymentResponse } from '../model/pedido.interface';
 import { PedidoService } from './pedido.service';
 
 describe('PedidoService', () => {
@@ -32,7 +33,7 @@ describe('PedidoService', () => {
   it('quotes PICKUP with the exact request body', () => {
     service.quote('PICKUP').subscribe((response) => expect(response).toEqual(quote));
 
-    const request = httpTesting.expectOne('http://localhost:3000/pedidos/quote');
+    const request = httpTesting.expectOne(`${environment.apiUrl}/pedidos/quote`);
     expect(request.request.method).toBe('POST');
     expect(request.request.body).toEqual({ deliveryMethod: 'PICKUP' });
     request.flush(quote);
@@ -41,7 +42,7 @@ describe('PedidoService', () => {
   it('quotes DELIVERY with the exact request body', () => {
     service.quote('DELIVERY').subscribe((response) => expect(response).toEqual(quote));
 
-    const request = httpTesting.expectOne('http://localhost:3000/pedidos/quote');
+    const request = httpTesting.expectOne(`${environment.apiUrl}/pedidos/quote`);
     expect(request.request.method).toBe('POST');
     expect(request.request.body).toEqual({ deliveryMethod: 'DELIVERY' });
     request.flush(quote);
@@ -57,12 +58,12 @@ describe('PedidoService', () => {
       id: 27,
       estado: 'CONFIRMED',
       total: '20500.00',
-      payment: { method: 'CASH', status: 'PENDING' },
+      payment: { method: 'CASH', status: 'PENDING', checkoutUrl: null },
     };
 
     service.create(body).subscribe((pedido) => expect(pedido).toEqual(response));
 
-    const request = httpTesting.expectOne('http://localhost:3000/pedidos');
+    const request = httpTesting.expectOne(`${environment.apiUrl}/pedidos`);
     expect(request.request.method).toBe('POST');
     expect(request.request.body).toEqual(body);
     expect(request.request.body).not.toHaveProperty('cart');
@@ -82,14 +83,35 @@ describe('PedidoService', () => {
       serviceFee: '500.00',
       deliveryFee: '0.00',
       total: '20500.00',
-      payment: { method: 'CASH', status: 'PENDING' },
+      payment: { method: 'CASH', status: 'PENDING', checkoutUrl: null },
     };
 
     service.getById(27).subscribe((response) => expect(response).toEqual(pedido));
 
-    const request = httpTesting.expectOne('http://localhost:3000/pedidos/27');
+    const request = httpTesting.expectOne(`${environment.apiUrl}/pedidos/27`);
     expect(request.request.method).toBe('GET');
     expect(request.request.headers.has('Authorization')).toBe(false);
     request.flush(pedido);
+  });
+
+  it('retries a Mercado Pago payment without sending a request body', () => {
+    const response: RetryPaymentResponse = {
+      id: 27,
+      estado: 'PENDING',
+      total: '22500.00',
+      payment: {
+        method: 'MERCADO_PAGO',
+        status: 'PENDING',
+        checkoutUrl: 'https://mercadopago.example/checkout/27',
+      },
+      paymentInitialization: { status: 'READY' },
+    };
+
+    service.retryPayment(27).subscribe((result) => expect(result).toEqual(response));
+
+    const request = httpTesting.expectOne(`${environment.apiUrl}/pedidos/27/payment/retry`);
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({});
+    request.flush(response);
   });
 });

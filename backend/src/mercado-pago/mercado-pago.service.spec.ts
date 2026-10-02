@@ -12,11 +12,13 @@ describe('MercadoPagoService', () => {
 
   beforeEach(() => {
     process.env.MERCADO_PAGO_ACCESS_TOKEN = 'test-access-token';
+    process.env.FRONTEND_URL = 'https://frontend.example';
   });
 
   afterEach(() => {
     global.fetch = originalFetch;
     delete process.env.MERCADO_PAGO_ACCESS_TOKEN;
+    delete process.env.FRONTEND_URL;
   });
 
   it('creates an order with the expected endpoint, headers and snapshot data', async () => {
@@ -54,6 +56,37 @@ describe('MercadoPagoService', () => {
       total_amount: '44500.00',
       expiration_time: 'PT30M',
       payer: { email: 'juan@email.com' },
+      config: {
+        online: {
+          success_url: 'https://frontend.example/pedidos/42',
+          failure_url: 'https://frontend.example/pedidos/42',
+          pending_url: 'https://frontend.example/pedidos/42',
+          auto_return: 'all',
+        },
+      },
+    });
+  });
+
+  it('normalizes a trailing slash in FRONTEND_URL for all return URLs', async () => {
+    process.env.FRONTEND_URL = 'https://frontend.example/';
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: jest.fn().mockResolvedValue({
+        id: 'mp-order-42',
+        checkout_url: 'https://mercadopago.example/checkout/42',
+      }),
+    });
+    global.fetch = fetchMock;
+    const service = new MercadoPagoService();
+
+    await service.createOrder(input);
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).config.online).toEqual({
+      success_url: 'https://frontend.example/pedidos/42',
+      failure_url: 'https://frontend.example/pedidos/42',
+      pending_url: 'https://frontend.example/pedidos/42',
+      auto_return: 'all',
     });
   });
 
@@ -93,6 +126,18 @@ describe('MercadoPagoService', () => {
     await expect(service.createOrder(input)).rejects.toThrow(
       'MERCADO_PAGO_ACCESS_TOKEN is required',
     );
+  });
+
+  it('fails clearly when FRONTEND_URL is missing without creating an order', async () => {
+    delete process.env.FRONTEND_URL;
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock;
+    const service = new MercadoPagoService();
+
+    await expect(service.createOrder(input)).rejects.toThrow(
+      'FRONTEND_URL is required',
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('finds an existing order through its stable external reference', async () => {

@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, signal } from '@angular/core';
 import { Observable, switchMap, tap } from 'rxjs';
+import { environment } from '../../../enviroments/enviroment';
 import {
   LoginRequest,
   LoginResponse,
@@ -10,8 +11,9 @@ import {
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private readonly authUrl = 'http://localhost:3000/auth/login';
-  private readonly usersUrl = 'http://localhost:3000/users';
+  private readonly apiUrl = environment.apiUrl;
+  private readonly authUrl = `${this.apiUrl}/auth/login`;
+  private readonly usersUrl = `${this.apiUrl}/users`;
   private readonly authenticated = signal(localStorage.getItem('accessToken') !== null);
   readonly isAuthenticated = this.authenticated.asReadonly();
 

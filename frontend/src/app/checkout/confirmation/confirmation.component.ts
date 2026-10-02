@@ -2,7 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, inject, OnInit, output, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { PedidoQuote } from '../../pedido/model/pedido-quote.interface';
-import { CreatePedidoRequest } from '../../pedido/model/create-pedido.interface';
+import { CreatePedidoRequest, CreatedPedido } from '../../pedido/model/create-pedido.interface';
 import { PedidoService } from '../../pedido/service/pedido.service';
 import { CartService } from '../../cart/service/cart.service';
 import { CheckoutService } from '../service/checkout.service';
@@ -59,40 +59,26 @@ export class ConfirmationComponent implements OnInit {
     });
   }
 
-  goBack(): void {
-    this.back.emit();
-  }
-
   confirmCashOrder(): void {
-    const checkoutData = this.checkoutData();
-
-    if (
-      checkoutData.payment?.method !== 'CASH' ||
-      !checkoutData.delivery ||
-      this.isSubmitting()
-    ) {
+    this.confirmOrder('CASH');
+  }
+  
+  confirmMercadoPagoOrder(): void {
+    this.confirmOrder('MERCADO_PAGO');
+  }
+  
+  private confirmOrder(paymentMethod: 'CASH' | 'MERCADO_PAGO'): void {
+    const request = this.createPedidoRequest(paymentMethod);
+    
+    if (!request || this.isSubmitting()) {
       return;
     }
-
-    const request: CreatePedidoRequest = {
-      personalInfo: { ...checkoutData.personalInfo },
-      delivery: checkoutData.delivery.method === 'PICKUP'
-        ? { method: 'PICKUP' }
-        : {
-            method: 'DELIVERY',
-            address: { ...checkoutData.delivery.address },
-          },
-      paymentMethod: checkoutData.payment.method,
-    };
-
+    
     this.isSubmitting.set(true);
     this.creationErrorMessage.set('');
     this.pedidoService.create(request).subscribe({
       next: (pedido) => {
-        this.cartService.getCart().subscribe({
-          next: () => this.navigateToPedido(pedido.id),
-          error: () => this.navigateToPedido(pedido.id),
-        });
+        this.handleCreatedPedido(pedido, paymentMethod);
       },
       error: (error: HttpErrorResponse) => {
         this.isSubmitting.set(false);
@@ -100,48 +86,111 @@ export class ConfirmationComponent implements OnInit {
       },
     });
   }
-
+  
+  private createPedidoRequest(
+    paymentMethod: 'CASH' | 'MERCADO_PAGO',
+  ): CreatePedidoRequest | null {
+    const checkoutData = this.checkoutData();
+    
+    if (
+      checkoutData.payment?.method !== paymentMethod ||
+      !checkoutData.delivery
+    ) {
+      return null;
+    }
+    
+    return {
+      personalInfo: { ...checkoutData.personalInfo },
+      delivery: checkoutData.delivery.method === 'PICKUP'
+      ? { method: 'PICKUP' }
+      : {
+        method: 'DELIVERY',
+        address: { ...checkoutData.delivery.address },
+      },
+      paymentMethod,
+    };
+  }
+  
+  private handleCreatedPedido(
+    pedido: CreatedPedido,
+    paymentMethod: 'CASH' | 'MERCADO_PAGO',
+  ): void {
+    if (
+      paymentMethod === 'MERCADO_PAGO' &&
+      pedido.paymentInitialization?.status === 'READY' &&
+      pedido.payment.checkoutUrl
+    ) {
+      this.refreshCart(() => {
+        this.isSubmitting.set(false);
+        this.redirectToCheckout(pedido.payment.checkoutUrl!);
+      });
+      return;
+    }
+    
+    if (paymentMethod === 'MERCADO_PAGO') {
+      this.refreshCart(() => this.navigateToPedido(pedido.id, { paymentLinkError: true }));
+      return;
+    }
+    
+    this.refreshCart(() => this.navigateToPedido(pedido.id));
+  }
+  
+  redirectToCheckout(checkoutUrl: string): void {
+    window.location.href = checkoutUrl;
+  }
+  
+  private navigateToPedido(pedidoId: number, state?: { paymentLinkError: boolean }): void {
+    void this.router.navigate(['/pedidos', pedidoId], state ? { state } : undefined).finally(() => {
+      this.isSubmitting.set(false);
+    });
+  }
+  
+  private refreshCart(afterRefresh: () => void): void {
+    this.cartService.getCart().subscribe({
+      next: afterRefresh,
+      error: afterRefresh,
+    });
+  }
+  
   paymentLabel(): string {
     const paymentMethod = this.checkoutData().payment?.method;
-
+    
     if (paymentMethod === 'CASH') {
       return 'Efectivo';
     }
-
+    
     if (paymentMethod === 'MERCADO_PAGO') {
       return 'Mercado Pago';
     }
-
+    
     return 'No seleccionado';
   }
-
+  
   private getQuoteErrorMessage(error: HttpErrorResponse): string {
     const response = error.error as QuoteErrorResponse | null;
-
+    
     if (response?.code === 'MINIMUM_PURCHASE_NOT_REACHED') {
       return response.message ?? 'El monto mínimo de compra es de $10.000';
     }
 
     return 'No pudimos calcular el total del pedido. Intentá nuevamente.';
   }
-
-  private navigateToPedido(pedidoId: number): void {
-    void this.router.navigate(['/pedidos', pedidoId]).finally(() => {
-      this.isSubmitting.set(false);
-    });
-  }
-
+  
   private getCreationErrorMessage(error: HttpErrorResponse): string {
     const response = error.error as QuoteErrorResponse | null;
-
+    
     if (response?.code === 'MINIMUM_PURCHASE_NOT_REACHED') {
       return response.message ?? 'El monto mínimo de compra es de $10.000';
     }
-
+    
     if (response?.code === 'INSUFFICIENT_STOCK') {
       return 'Uno o más productos ya no tienen stock suficiente. Revisá tu carrito.';
     }
-
+    
     return 'No pudimos confirmar el pedido. Intentá nuevamente.';
+  }
+  
+  goBack(): void {
+    this.back.emit();
   }
 }

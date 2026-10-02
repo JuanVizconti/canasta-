@@ -1,6 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { environment } from '../../../enviroments/enviroment';
 import { Product } from '../model/product.interface';
 import { ProductService } from './product.service';
 
@@ -37,7 +38,7 @@ describe('ProductService', () => {
       expect(response).toEqual(products);
     });
 
-    const request = httpTesting.expectOne('http://localhost:3000/products');
+    const request = httpTesting.expectOne(`${environment.apiUrl}/products`);
     expect(request.request.method).toBe('GET');
     request.flush(products);
   });

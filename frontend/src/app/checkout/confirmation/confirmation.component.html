@@ -69,7 +69,9 @@
       {{ isSubmitting() ? 'Confirmando...' : 'Confirmar pedido' }}
     </button>
   } @else if (checkoutData().payment?.method === 'MERCADO_PAGO') {
-    <button type="button" disabled>Ir a pagar</button>
+    <button type="button" (click)="confirmMercadoPagoOrder()" [disabled]="isSubmitting()">
+      {{ isSubmitting() ? 'Procesando...' : 'Ir a pagar' }}
+    </button>
   }
 
   <button type="button" (click)="goBack()">Atrás</button>

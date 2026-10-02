@@ -4,6 +4,7 @@
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
+    "start:tunnel": "ng serve --configuration=tunnel",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"

@@ -30,7 +30,7 @@
 
     <h3>Entrega</h3>
     @if (pedido.delivery.method === 'PICKUP') {
-      <p>Retiro</p>
+      <p>Retiro por el local</p>
     } @else {
       <p>Envío a domicilio</p>
       <p>{{ pedido.delivery.address.calle }} {{ pedido.delivery.address.numero }}</p>
@@ -50,6 +50,14 @@
     @if (pedido.payment; as payment) {
       <p>{{ paymentMethodLabel(payment.method) }}</p>
       <p>Estado del pago: {{ paymentStatusLabel(payment.status) }}</p>
+      @if (canPay(pedido)) {
+        <button type="button" (click)="goToPayment()" [disabled]="isPaymentLoading()">
+          {{ isPaymentLoading() ? 'Procesando...' : 'Ir a pagar' }}
+        </button>
+      }
+      @if (paymentErrorMessage()) {
+        <p>{{ paymentErrorMessage() }}</p>
+      }
     } @else {
       <p>Sin información de pago</p>
     }

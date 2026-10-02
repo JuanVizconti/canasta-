@@ -64,7 +64,7 @@ describe('app routes', () => {
               serviceFee: '500.00',
               deliveryFee: '0.00',
               total: '20500.00',
-              payment: { method: 'CASH', status: 'PENDING' },
+              payment: { method: 'CASH', status: 'PENDING', checkoutUrl: null },
             }),
           },
         },

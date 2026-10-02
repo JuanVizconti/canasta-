@@ -40,6 +40,7 @@ export interface PedidoItem {
 export interface PedidoPayment {
   method: PedidoPaymentMethod;
   status: PedidoPaymentStatus;
+  checkoutUrl: string | null;
 }
 
 export interface Pedido {
@@ -59,4 +60,18 @@ export interface Pedido {
   deliveryFee: string;
   total: string;
   payment: PedidoPayment | null;
+}
+
+export interface RetryPaymentResponse {
+  id: number;
+  estado: PedidoEstado;
+  total: string;
+  payment: {
+    method: 'MERCADO_PAGO';
+    status: 'PENDING';
+    checkoutUrl: string | null;
+  };
+  paymentInitialization: {
+    status: 'READY' | 'FAILED';
+  };
 }

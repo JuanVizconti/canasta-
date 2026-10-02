@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { Observable, of, Subject, throwError } from 'rxjs';
+import { vi } from 'vitest';
 import { Pedido } from './model/pedido.interface';
 import { PedidoService } from './service/pedido.service';
 import { PedidoComponent } from './pedido.component';
@@ -11,6 +12,8 @@ describe('PedidoComponent', () => {
   let routeId: string | null;
   let getByIdCalls: number[];
   let response: Observable<Pedido>;
+  let retryPaymentCalls: number[];
+  let retryPaymentResponse: Observable<unknown>;
 
   const pedido: Pedido = {
     id: 27,
@@ -29,13 +32,25 @@ describe('PedidoComponent', () => {
     serviceFee: '500.00',
     deliveryFee: '2000.00',
     total: '22500.00',
-    payment: { method: 'CASH', status: 'PENDING' },
+    payment: { method: 'CASH', status: 'PENDING', checkoutUrl: null },
   };
 
   beforeEach(async () => {
     routeId = '27';
     getByIdCalls = [];
     response = of(pedido);
+    retryPaymentCalls = [];
+    retryPaymentResponse = of({
+      id: 27,
+      estado: 'PENDING',
+      total: '22500.00',
+      payment: {
+        method: 'MERCADO_PAGO',
+        status: 'PENDING',
+        checkoutUrl: 'https://mercadopago.example/checkout/27',
+      },
+      paymentInitialization: { status: 'READY' },
+    });
 
     await TestBed.configureTestingModule({
       imports: [PedidoComponent],
@@ -50,6 +65,10 @@ describe('PedidoComponent', () => {
             getById: (id: number) => {
               getByIdCalls.push(id);
               return response;
+            },
+            retryPayment: (id: number) => {
+              retryPaymentCalls.push(id);
+              return retryPaymentResponse;
             },
           },
         },
@@ -98,11 +117,121 @@ describe('PedidoComponent', () => {
   });
 
   it('renders Mercado Pago and approved status from persisted values', () => {
-    response = of({ ...pedido, payment: { method: 'MERCADO_PAGO', status: 'APPROVED' } });
+    response = of({
+      ...pedido,
+      payment: { method: 'MERCADO_PAGO', status: 'APPROVED', checkoutUrl: null },
+    });
     createComponent();
 
     expect(fixture.nativeElement.textContent).toContain('Mercado Pago');
     expect(fixture.nativeElement.textContent).toContain('Aprobado');
+    expect(fixture.nativeElement.textContent).not.toContain('Ir a pagar');
+  });
+
+  it('redirects directly when a pending Mercado Pago payment already has a checkout URL', () => {
+    response = of({
+      ...pedido,
+      estado: 'PENDING',
+      payment: {
+        method: 'MERCADO_PAGO',
+        status: 'PENDING',
+        checkoutUrl: 'https://mercadopago.example/checkout/27',
+      },
+    });
+    createComponent();
+    const redirect = vi.spyOn(component, 'redirectToCheckout').mockImplementation(() => undefined);
+
+    component.goToPayment();
+
+    expect(fixture.nativeElement.textContent).toContain('Ir a pagar');
+    expect(retryPaymentCalls).toEqual([]);
+    expect(redirect).toHaveBeenCalledWith('https://mercadopago.example/checkout/27');
+  });
+
+  it('retries a pending Mercado Pago payment without a checkout URL and redirects when ready', () => {
+    response = of({
+      ...pedido,
+      estado: 'PENDING',
+      payment: { method: 'MERCADO_PAGO', status: 'PENDING', checkoutUrl: null },
+    });
+    createComponent();
+    const redirect = vi.spyOn(component, 'redirectToCheckout').mockImplementation(() => undefined);
+
+    component.goToPayment();
+
+    expect(retryPaymentCalls).toEqual([27]);
+    expect(redirect).toHaveBeenCalledWith('https://mercadopago.example/checkout/27');
+  });
+
+  it('keeps the pedido visible when the retry returns FAILED', () => {
+    response = of({
+      ...pedido,
+      estado: 'PENDING',
+      payment: { method: 'MERCADO_PAGO', status: 'PENDING', checkoutUrl: null },
+    });
+    retryPaymentResponse = of({
+      id: 27,
+      estado: 'PENDING',
+      total: '22500.00',
+      payment: { method: 'MERCADO_PAGO', status: 'PENDING', checkoutUrl: null },
+      paymentInitialization: { status: 'FAILED' },
+    });
+    createComponent();
+    const redirect = vi.spyOn(component, 'redirectToCheckout').mockImplementation(() => undefined);
+
+    component.goToPayment();
+    fixture.detectChanges();
+
+    expect(redirect).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain(
+      'No pudimos generar el link de pago. Intentá nuevamente más tarde.',
+    );
+  });
+
+  it('shows the expiration message when the backend rejects the retry as expired', () => {
+    response = of({
+      ...pedido,
+      estado: 'PENDING',
+      payment: { method: 'MERCADO_PAGO', status: 'PENDING', checkoutUrl: null },
+    });
+    retryPaymentResponse = throwError(() => ({ error: { code: 'PAYMENT_EXPIRED' } }));
+    createComponent();
+
+    component.goToPayment();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain(
+      'El tiempo para completar este pago expiró.',
+    );
+  });
+
+  it('prevents duplicate retries while payment initialization is loading', () => {
+    response = of({
+      ...pedido,
+      estado: 'PENDING',
+      payment: { method: 'MERCADO_PAGO', status: 'PENDING', checkoutUrl: null },
+    });
+    retryPaymentResponse = new Subject();
+    createComponent();
+
+    component.goToPayment();
+    component.goToPayment();
+    fixture.detectChanges();
+
+    expect(retryPaymentCalls).toEqual([27]);
+    expect(fixture.nativeElement.textContent).toContain('Procesando...');
+    expect((fixture.nativeElement.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('does not show payment action for a non-pending Mercado Pago pedido', () => {
+    response = of({
+      ...pedido,
+      estado: 'CONFIRMED',
+      payment: { method: 'MERCADO_PAGO', status: 'PENDING', checkoutUrl: null },
+    });
+    createComponent();
+
+    expect(fixture.nativeElement.textContent).not.toContain('Ir a pagar');
   });
 
   it('shows the not-found error using its semantic code', () => {

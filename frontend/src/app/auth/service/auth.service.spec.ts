@@ -1,6 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { environment } from '../../../enviroments/enviroment';
 import { AuthService } from './auth.service';
 
 describe('AuthService', () => {
@@ -27,7 +28,7 @@ describe('AuthService', () => {
 
     service.login(requestBody).subscribe();
 
-    const request = httpTesting.expectOne('http://localhost:3000/auth/login');
+    const request = httpTesting.expectOne(`${environment.apiUrl}/auth/login`);
     expect(request.request.method).toBe('POST');
     expect(request.request.body).toEqual(requestBody);
     request.flush({ accessToken: 'jwt-token' });
@@ -60,12 +61,12 @@ describe('AuthService', () => {
 
     service.register(requestBody).subscribe();
 
-    const registerRequest = httpTesting.expectOne('http://localhost:3000/users');
+    const registerRequest = httpTesting.expectOne(`${environment.apiUrl}/users`);
     expect(registerRequest.request.method).toBe('POST');
     expect(registerRequest.request.body).toEqual(requestBody);
     registerRequest.flush({ id: 1, usuario: requestBody.usuario, email: requestBody.email });
 
-    const loginRequest = httpTesting.expectOne('http://localhost:3000/auth/login');
+    const loginRequest = httpTesting.expectOne(`${environment.apiUrl}/auth/login`);
     expect(loginRequest.request.method).toBe('POST');
     expect(loginRequest.request.body).toEqual({
       email: requestBody.email,
@@ -85,10 +86,10 @@ describe('AuthService', () => {
       password: '12345678',
     }).subscribe({ error: () => undefined });
 
-    const registerRequest = httpTesting.expectOne('http://localhost:3000/users');
+    const registerRequest = httpTesting.expectOne(`${environment.apiUrl}/users`);
     registerRequest.flush({}, { status: 400, statusText: 'Bad Request' });
 
-    httpTesting.expectNone('http://localhost:3000/auth/login');
+    httpTesting.expectNone(`${environment.apiUrl}/auth/login`);
     expect(localStorage.getItem('accessToken')).toBeNull();
   });
 
@@ -96,7 +97,7 @@ describe('AuthService', () => {
     service = TestBed.inject(AuthService);
     service.login({ email: 'usuario@email.com', password: '12345678' }).subscribe();
     httpTesting
-      .expectOne('http://localhost:3000/auth/login')
+      .expectOne(`${environment.apiUrl}/auth/login`)
       .flush({ accessToken: 'jwt-token' });
 
     expect(service.isAuthenticated()).toBe(true);

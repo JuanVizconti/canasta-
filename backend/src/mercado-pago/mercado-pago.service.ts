@@ -13,10 +13,22 @@ export class MercadoPagoService {
     input: CreateMercadoPagoOrderInput,
   ): Promise<MercadoPagoOrderResult> {
     const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
+    const frontendUrl = process.env.FRONTEND_URL;
 
     if (!accessToken) {
       throw new Error('MERCADO_PAGO_ACCESS_TOKEN is required');
     }
+
+    if (!frontendUrl) {
+      throw new Error('FRONTEND_URL is required');
+    }
+
+    const normalizedFrontendUrl = frontendUrl.replace(/\/+$/, '');
+    if (!normalizedFrontendUrl) {
+      throw new Error('FRONTEND_URL is required');
+    }
+
+    const returnUrl = `${normalizedFrontendUrl}/pedidos/${input.pedidoId}`;
 
     const response = await fetch(MERCADO_PAGO_ORDERS_URL, {
       method: 'POST',
@@ -33,6 +45,14 @@ export class MercadoPagoService {
         total_amount: input.total,
         expiration_time: input.expirationTime,
         payer: { email: input.payerEmail },
+        config: {
+          online: {
+            success_url: returnUrl,
+            failure_url: returnUrl,
+            pending_url: returnUrl,
+            auto_return: 'all',
+          },
+        },
       }),
     });
 
