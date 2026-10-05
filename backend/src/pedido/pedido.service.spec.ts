@@ -31,7 +31,6 @@ describe('PedidoService', () => {
       getSubtotalForUser: jest.fn().mockResolvedValue(new Prisma.Decimal(subtotal)),
     } as unknown as CartService;
     const mercadoPagoService = {
-      findOrderByExternalReference: jest.fn().mockResolvedValue(null),
       createOrder: jest.fn().mockResolvedValue({
         providerOrderId: 'mp-order-27',
         checkoutUrl: 'https://mercadopago.example/checkout/27',
@@ -338,7 +337,6 @@ describe('PedidoService', () => {
     expect(prisma.pedido.findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 42, userId: 7 },
     }));
-    expect(mercadoPagoService.findOrderByExternalReference).not.toHaveBeenCalled();
     expect(mercadoPagoService.createOrder).not.toHaveBeenCalled();
   });
 
@@ -356,7 +354,6 @@ describe('PedidoService', () => {
     await expect(service.retryMercadoPagoPayment(7, 42)).rejects.toMatchObject({
       response: { code: PedidoErrorCode.PAYMENT_RETRY_NOT_ALLOWED },
     });
-    expect(mercadoPagoService.findOrderByExternalReference).not.toHaveBeenCalled();
     expect(mercadoPagoService.createOrder).not.toHaveBeenCalled();
     expect(prisma.payment.update).not.toHaveBeenCalled();
     expect(prisma.pedido.create).not.toHaveBeenCalled();
@@ -371,7 +368,6 @@ describe('PedidoService', () => {
     await expect(service.retryMercadoPagoPayment(7, 42)).rejects.toMatchObject({
       response: { code: PedidoErrorCode.PAYMENT_EXPIRED },
     });
-    expect(mercadoPagoService.findOrderByExternalReference).not.toHaveBeenCalled();
     expect(mercadoPagoService.createOrder).not.toHaveBeenCalled();
     expect(prisma.payment.update).not.toHaveBeenCalled();
     expect(prisma.pedido.create).not.toHaveBeenCalled();
@@ -401,42 +397,13 @@ describe('PedidoService', () => {
       },
       paymentInitialization: { status: 'READY' },
     });
-    expect(mercadoPagoService.findOrderByExternalReference).not.toHaveBeenCalled();
     expect(mercadoPagoService.createOrder).not.toHaveBeenCalled();
     expect(prisma.payment.update).not.toHaveBeenCalled();
     expect(prisma.pedido.create).not.toHaveBeenCalled();
     expect(prisma.payment.create).not.toHaveBeenCalled();
   });
 
-  it('recovers an existing remote order without creating another one', async () => {
-    const { service, mercadoPagoService } = createService();
-    jest.spyOn(mercadoPagoService, 'findOrderByExternalReference').mockResolvedValue({
-      providerOrderId: 'mp-order-remote-42',
-      checkoutUrl: 'https://mercadopago.example/checkout/remote-42',
-    });
-    const prisma = configureRetryPrisma(service);
-
-    await expect(service.retryMercadoPagoPayment(7, 42)).resolves.toMatchObject({
-      payment: { checkoutUrl: 'https://mercadopago.example/checkout/remote-42' },
-      paymentInitialization: { status: 'READY' },
-    });
-
-    expect(mercadoPagoService.findOrderByExternalReference).toHaveBeenCalledTimes(1);
-    expect(mercadoPagoService.createOrder).not.toHaveBeenCalled();
-    expect(prisma.payment.update).toHaveBeenCalledTimes(1);
-    expect(prisma.payment.update).toHaveBeenCalledWith({
-      where: { pedidoId: 42 },
-      data: {
-        providerOrderId: 'mp-order-remote-42',
-        checkoutUrl: 'https://mercadopago.example/checkout/remote-42',
-      },
-    });
-    expect(prisma.pedido.create).not.toHaveBeenCalled();
-    expect(prisma.payment.create).not.toHaveBeenCalled();
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-  });
-
-  it('uses a new idempotency key only after Mercado Pago confirms there is no remote order', async () => {
+  it('uses a new idempotency key and creates a new Mercado Pago order when checkout URL is absent', async () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-10-01T13:10:00.000Z'));
     const { service, mercadoPagoService } = createService();
@@ -459,11 +426,6 @@ describe('PedidoService', () => {
       paymentInitialization: { status: 'READY' },
     });
 
-    expect(mercadoPagoService.findOrderByExternalReference).toHaveBeenCalledWith({
-      pedidoId: 42,
-      beginDate: new Date('2026-10-01T12:55:00.000Z'),
-      endDate: new Date('2026-10-01T13:35:00.000Z'),
-    });
     const newIdempotencyKey = prisma.payment.update.mock.calls[0][0].data.idempotencyKey;
     expect(newIdempotencyKey).toEqual(expect.any(String));
     expect(newIdempotencyKey).not.toBe('persisted-idempotency-key');
