@@ -1,0 +1,71 @@
+<section class="pedido-card">
+  @if (isLoading()) {
+    <p>Cargando pedido...</p>
+  } @else if (errorMessage()) {
+    <p>{{ errorMessage() }}</p>
+    @if (errorMessage() !== 'El identificador del pedido no es válido.') {
+      <button type="button" (click)="retry()">Reintentar</button>
+    }
+  } @else if (pedido(); as pedido) {
+    <h2>Pedido #{{ pedido.id }}</h2>
+    <p>Creado: {{ pedido.createdAt | date: 'dd/MM/yyyy, HH:mm' }}</p>
+
+    <h3>Estado del pedido</h3>
+    <p>{{ pedidoStatusLabel(pedido.estado) }}</p>
+
+    <h3>Productos</h3>
+    @for (item of pedido.items; track item.productId) {
+      <article>
+        <p>{{ item.nombre }}</p>
+        <p>Marca: {{ item.marca }}</p>
+        <p>Cantidad: {{ item.cantidad }}</p>
+        <p>Precio unitario: ${{ item.unitPrice }}</p>
+      </article>
+    }
+
+    <h3>Datos personales</h3>
+    <p>{{ pedido.personalInfo.nombre }} {{ pedido.personalInfo.apellido }}</p>
+    <p>DNI: {{ pedido.personalInfo.dni }}</p>
+    <p>Teléfono: {{ pedido.personalInfo.telefono }}</p>
+
+    <h3>Entrega</h3>
+    @if (pedido.delivery.method === 'PICKUP') {
+      <p>Retiro por el local</p>
+    } @else {
+      <p>Envío a domicilio</p>
+      <p>{{ pedido.delivery.address.calle }} {{ pedido.delivery.address.numero }}</p>
+      <p>{{ pedido.delivery.address.localidad }}, CP {{ pedido.delivery.address.codigoPostal }}</p>
+      @if (pedido.delivery.address.piso) {
+        <p>Piso: {{ pedido.delivery.address.piso }}</p>
+      }
+      @if (pedido.delivery.address.departamento) {
+        <p>Departamento: {{ pedido.delivery.address.departamento }}</p>
+      }
+      @if (pedido.delivery.address.especificaciones) {
+        <p>Indicaciones: {{ pedido.delivery.address.especificaciones }}</p>
+      }
+    }
+
+    <h3>Método de pago</h3>
+    @if (pedido.payment; as payment) {
+      <p>{{ paymentMethodLabel(payment.method) }}</p>
+      <p>Estado del pago: {{ paymentStatusLabel(payment.status) }}</p>
+      @if (canPay(pedido)) {
+        <button type="button" (click)="goToPayment()" [disabled]="isPaymentLoading()">
+          {{ isPaymentLoading() ? 'Procesando...' : 'Ir a pagar' }}
+        </button>
+      }
+      @if (paymentErrorMessage()) {
+        <p>{{ paymentErrorMessage() }}</p>
+      }
+    } @else {
+      <p>Sin información de pago</p>
+    }
+
+    <h3>Resumen</h3>
+    <p>Subtotal: ${{ pedido.subtotal }}</p>
+    <p>Gastos de servicio: ${{ pedido.serviceFee }}</p>
+    <p>Envío: ${{ pedido.deliveryFee }}</p>
+    <p>Total: ${{ pedido.total }}</p>
+  }
+</section>

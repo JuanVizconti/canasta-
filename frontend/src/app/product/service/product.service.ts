@@ -1,11 +1,13 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
+import { environment } from '../../../enviroments/enviroment';
 import { Product } from '../model/product.interface';
 
 @Injectable({ providedIn: 'root' })
 export class ProductService {
-  private readonly productsUrl = 'http://localhost:3000/products';
+  private readonly apiUrl = environment.apiUrl;
+  private readonly productsUrl = `${this.apiUrl}/products`;
 
   constructor(private readonly http: HttpClient) {}
 

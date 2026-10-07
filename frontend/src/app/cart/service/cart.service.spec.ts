@@ -1,6 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { environment } from '../../../enviroments/enviroment';
 import { Cart } from '../model/cart.interface';
 import { CartService } from './cart.service';
 
@@ -30,7 +31,7 @@ describe('CartService', () => {
   it('gets the cart from GET /cart', () => {
     service.getCart().subscribe((cart) => expect(cart).toEqual(emptyCart));
 
-    const request = httpTesting.expectOne('http://localhost:3000/cart');
+    const request = httpTesting.expectOne(`${environment.apiUrl}/cart`);
     expect(request.request.method).toBe('GET');
     request.flush(emptyCart);
   });
@@ -38,7 +39,7 @@ describe('CartService', () => {
   it('adds an item with POST /cart/items', () => {
     service.addItem(11, 2).subscribe((cart) => expect(cart).toEqual(emptyCart));
 
-    const request = httpTesting.expectOne('http://localhost:3000/cart/items');
+    const request = httpTesting.expectOne(`${environment.apiUrl}/cart/items`);
     expect(request.request.method).toBe('POST');
     expect(request.request.body).toEqual({ productId: 11, cantidad: 2 });
     request.flush(emptyCart);
@@ -47,7 +48,7 @@ describe('CartService', () => {
   it('updates an item with PATCH /cart/items/:productId', () => {
     service.updateItem(11, 3).subscribe((cart) => expect(cart).toEqual(emptyCart));
 
-    const request = httpTesting.expectOne('http://localhost:3000/cart/items/11');
+    const request = httpTesting.expectOne(`${environment.apiUrl}/cart/items/11`);
     expect(request.request.method).toBe('PATCH');
     expect(request.request.body).toEqual({ cantidad: 3 });
     request.flush(emptyCart);
@@ -56,7 +57,7 @@ describe('CartService', () => {
   it('removes an item with DELETE /cart/items/:productId', () => {
     service.removeItem(11).subscribe((cart) => expect(cart).toEqual(emptyCart));
 
-    const request = httpTesting.expectOne('http://localhost:3000/cart/items/11');
+    const request = httpTesting.expectOne(`${environment.apiUrl}/cart/items/11`);
     expect(request.request.method).toBe('DELETE');
     request.flush(emptyCart);
   });

@@ -1,23 +1,55 @@
-import { Component, inject, signal } from '@angular/core';
-import { Router, RouterLink, RouterOutlet } from '@angular/router';
+import { Component, computed, inject, signal } from '@angular/core';
+import { Router, NavigationEnd, RouterLink, RouterOutlet } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { filter, map } from 'rxjs';
 import { AuthService } from './auth/service/auth.service';
-import { ProductListComponent } from './product/product-list.component';
+import { LoginComponent } from './auth/login.component';
+import { RegisterComponent } from './auth/register.component';
+import { CartComponent } from './cart/cart.component';
+import { OverlayService } from './ui/overlay.service';
 
 @Component({
   selector: 'app-root',
-  imports: [ProductListComponent, RouterLink, RouterOutlet],
+  imports: [
+    RouterLink,
+    RouterOutlet,
+    LoginComponent,
+    RegisterComponent,
+    CartComponent,
+  ],
   templateUrl: './app.html',
   styleUrl: './app.scss'
 })
 export class App {
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly overlayService = inject(OverlayService);
+  private readonly currentUrl = toSignal(
+    this.router.events.pipe(
+      filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+      map((event) => event.urlAfterRedirects),
+    ),
+    { initialValue: this.router.url },
+  );
   readonly isAuthenticated = this.authService.isAuthenticated;
+  readonly activeOverlay = this.overlayService.activeOverlay;
+  readonly isCheckoutOrPedido = computed(() => {
+    const url = this.currentUrl();
+    return url === '/checkout' || /^\/pedidos\/[^/]+$/.test(url);
+  });
   readonly showLogoutConfirmation = signal(false);
   readonly logoutMessage = signal('');
 
   goToLogin():void{
-    void this.router.navigate(['/login']);
+    this.overlayService.openLogin();
+  }
+
+  openCart(): void {
+    this.overlayService.openCart();
+  }
+
+  goHome(): void {
+    void this.router.navigate(['/']);
   }
   
   openLogoutConfirmation():void{
@@ -39,5 +71,9 @@ export class App {
     }, 1500);
 
     void this.router.navigateByUrl('/');
+  }
+
+  closeOverlay(): void {
+    this.overlayService.close();
   }
 }

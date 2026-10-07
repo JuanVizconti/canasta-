@@ -1,0 +1,78 @@
+<section class="checkout-card">
+  <h2>Confirmar compra</h2>
+
+  <h3>Productos</h3>
+  @if (checkoutData().cart; as cart) {
+    @for (item of cart.items; track item.id) {
+      <article>
+        <p>{{ item.product.nombre }}</p>
+        <p>Marca: {{ item.product.marca }}</p>
+        <p>Cantidad: {{ item.cantidad }}</p>
+        @if (item.product.imgUrl) {
+          <img [src]="item.product.imgUrl" [alt]="item.product.nombre" />
+        }
+      </article>
+    }
+  } @else {
+    <p>No hay productos confirmados.</p>
+  }
+
+  <h3>Datos personales</h3>
+  <p>{{ checkoutData().personalInfo.nombre }} {{ checkoutData().personalInfo.apellido }}</p>
+  <p>DNI: {{ checkoutData().personalInfo.dni }}</p>
+  <p>Teléfono: {{ checkoutData().personalInfo.telefono }}</p>
+
+  <h3>Entrega</h3>
+  @if (checkoutData().delivery?.method === 'PICKUP') {
+    <p>Retiro por el local</p>
+  } @else if (checkoutData().delivery; as delivery) {
+    @if (delivery.method === 'DELIVERY') {
+      <p>Envío a domicilio</p>
+      <p>{{ delivery.address.calle }} {{ delivery.address.numero }}</p>
+      <p>{{ delivery.address.localidad }}, CP {{ delivery.address.codigoPostal }}</p>
+      @if (delivery.address.piso) {
+        <p>Piso: {{ delivery.address.piso }}</p>
+      }
+      @if (delivery.address.departamento) {
+        <p>Departamento: {{ delivery.address.departamento }}</p>
+      }
+      @if (delivery.address.especificaciones) {
+        <p>Indicaciones: {{ delivery.address.especificaciones }}</p>
+      }
+    }
+  } @else {
+    <p>Sin método de entrega.</p>
+  }
+
+  <h3>Pago</h3>
+  <p>{{ paymentLabel() }}</p>
+
+  <h3>Resumen</h3>
+  @if (isLoading()) {
+    <p>Calculando total...</p>
+  } @else if (quote(); as quote) {
+    <p>Subtotal: ${{ quote.subtotal }}</p>
+    <p>Gastos de servicio: ${{ quote.serviceFee }}</p>
+    <p>Envío: ${{ quote.deliveryFee }}</p>
+    <p>Total: ${{ quote.total }}</p>
+  } @else if (errorMessage()) {
+    <p>{{ errorMessage() }}</p>
+    <button type="button" (click)="loadQuote()">Reintentar</button>
+  }
+
+  @if (creationErrorMessage()) {
+    <p>{{ creationErrorMessage() }}</p>
+  }
+
+  @if (checkoutData().payment?.method === 'CASH') {
+    <button type="button" (click)="confirmCashOrder()" [disabled]="isSubmitting()">
+      {{ isSubmitting() ? 'Confirmando...' : 'Confirmar pedido' }}
+    </button>
+  } @else if (checkoutData().payment?.method === 'MERCADO_PAGO') {
+    <button type="button" (click)="confirmMercadoPagoOrder()" [disabled]="isSubmitting()">
+      {{ isSubmitting() ? 'Procesando...' : 'Ir a pagar' }}
+    </button>
+  }
+
+  <button type="button" (click)="goBack()">Atrás</button>
+</section>

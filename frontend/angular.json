@@ -54,6 +54,17 @@
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true
+            },
+            "tunnel": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true,
+              "fileReplacements": [
+                {
+                  "replace": "src/enviroments/enviroment.ts",
+                  "with": "src/enviroments/enviroment.tunnel.ts"
+                }
+              ]
             }
           },
           "defaultConfiguration": "production"
@@ -66,6 +77,9 @@
             },
             "development": {
               "buildTarget": "frontend:build:development"
+            },
+            "tunnel": {
+              "buildTarget": "frontend:build:tunnel"
             }
           },
           "defaultConfiguration": "development"

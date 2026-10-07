@@ -1,0 +1,42 @@
+<section class="checkout-card">
+  <h2>Revisá tu carrito</h2>
+
+  @if (cart() === null) {
+    <p>Cargando carrito...</p>
+  } @else if (cart()!.items.length === 0) {
+    <p>Tu carrito está vacío.</p>
+  } @else {
+    @for (item of cart()!.items; track item.id) {
+      <article>
+        <h3>{{ item.product.nombre }}</h3>
+        <p>Marca: {{ item.product.marca }}</p>
+        <p>Precio: ${{ item.product.precio }}</p>
+        <p>Cantidad: {{ item.cantidad }}</p>
+        <div>
+          <button
+            type="button"
+            [disabled]="item.cantidad <= 1"
+            (click)="decreaseQuantity(item.productId, item.cantidad)"
+          >
+            -
+          </button>
+          <button
+            type="button"
+            [disabled]="item.cantidad >= item.product.stock"
+            (click)="increaseQuantity(item.productId, item.cantidad, item.product.stock)"
+          >
+            +
+          </button>
+          <button type="button" (click)="removeItem(item.productId)">Eliminar</button>
+        </div>
+      </article>
+    }
+
+    <p>Subtotal: ${{ cart()!.price }}</p>
+    <button type="button" (click)="confirmCart()">Confirmar carrito</button>
+  }
+
+  @if (errorMessage()) {
+    <p>{{ errorMessage() }}</p>
+  }
+</section>

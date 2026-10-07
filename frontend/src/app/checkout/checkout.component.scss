@@ -1,0 +1,21 @@
+:host {
+  display: block;
+  max-width: 32rem;
+  margin: 2rem auto;
+}
+
+.checkout-card {
+  padding: 1.5rem;
+  border: 1px solid #ddd;
+  border-radius: 0.25rem;
+}
+
+label,
+input {
+  display: block;
+}
+
+span {
+  display: block;
+  margin-top: 0.25rem;
+}

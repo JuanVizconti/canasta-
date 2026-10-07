@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, OnModuleDestroy } from '@nestjs/common';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Prisma, PrismaClient } from '@prisma/client';
-import { CartMapper, cartInclude } from './cart.mapper';
+import { CartMapper, cartInclude, CartWithItems } from './cart.mapper';
 import { AddCartItemDto } from './dto/add-cart-item.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
 
@@ -28,6 +28,15 @@ export class CartService implements OnModuleDestroy {
     });
 
     return CartMapper.toResponse(cart);
+  }
+
+  async getSubtotalForUser(userId: number): Promise<Prisma.Decimal> {
+    const cart = await this.prisma.cart.findUnique({
+      where: { userId },
+      include: cartInclude,
+    });
+
+    return this.calculatePrice(cart?.items ?? []);
   }
 
   async addItem(userId: number, { productId, cantidad }: AddCartItemDto) {
@@ -157,10 +166,7 @@ export class CartService implements OnModuleDestroy {
       where: { id: cartId },
       include: cartInclude,
     });
-    const price = cart.items.reduce(
-      (total, item) => total.plus(item.product.precio.mul(item.cantidad)),
-      new Prisma.Decimal(0),
-    );
+    const price = this.calculatePrice(cart.items);
     const updatedCart = await this.prisma.cart.update({
       where: { id: cartId },
       data: { price },
@@ -168,5 +174,12 @@ export class CartService implements OnModuleDestroy {
     });
 
     return CartMapper.toResponse(updatedCart);
+  }
+
+  private calculatePrice(items: CartWithItems['items']): Prisma.Decimal {
+    return items.reduce(
+      (total, item) => total.plus(item.product.precio.mul(item.cantidad)),
+      new Prisma.Decimal(0),
+    );
   }
 }

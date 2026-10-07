@@ -4,17 +4,17 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { authInterceptor } from './auth.interceptor';
 import { AuthService } from './service/auth.service';
+import { OverlayService } from '../ui/overlay.service';
 
 describe('authInterceptor', () => {
   let http: HttpClient;
   let httpTesting: HttpTestingController;
   let logoutCalls: number;
-  let navigation: { commands: unknown[]; extras: unknown } | undefined;
+  let overlayService: OverlayService;
 
   beforeEach(() => {
     localStorage.clear();
     logoutCalls = 0;
-    navigation = undefined;
 
     TestBed.configureTestingModule({
       providers: [
@@ -28,10 +28,6 @@ describe('authInterceptor', () => {
           provide: Router,
           useValue: {
             url: '/cart',
-            navigate: (commands: unknown[], extras: unknown) => {
-              navigation = { commands, extras };
-              return Promise.resolve(true);
-            },
           },
         },
       ],
@@ -39,6 +35,8 @@ describe('authInterceptor', () => {
 
     http = TestBed.inject(HttpClient);
     httpTesting = TestBed.inject(HttpTestingController);
+    overlayService = TestBed.inject(OverlayService);
+    overlayService.close();
   });
 
   afterEach(() => {
@@ -64,7 +62,7 @@ describe('authInterceptor', () => {
     request.flush([]);
   });
 
-  it('logs out and redirects to login for INVALID_SESSION', () => {
+  it('logs out and opens login with the current URL for INVALID_SESSION', () => {
     http.get('/cart').subscribe({ error: () => undefined });
 
     const request = httpTesting.expectOne('/cart');
@@ -74,10 +72,9 @@ describe('authInterceptor', () => {
     );
 
     expect(logoutCalls).toBe(1);
-    expect(navigation).toEqual({
-      commands: ['/login'],
-      extras: { state: { invalidSession: true, returnUrl: '/cart' } },
-    });
+    expect(overlayService.activeOverlay()).toBe('login');
+    expect(overlayService.returnUrl()).toBe('/cart');
+    expect(overlayService.loginReason()).toBe('invalid-session');
   });
 
   it('does not log out for INVALID_CREDENTIALS', () => {
@@ -90,6 +87,25 @@ describe('authInterceptor', () => {
     );
 
     expect(logoutCalls).toBe(0);
-    expect(navigation).toBeUndefined();
+    expect(overlayService.activeOverlay()).toBeNull();
+  });
+
+  it('keeps the current URL as the return URL for repeated INVALID_SESSION errors', () => {
+    http.get('/cart').subscribe({ error: () => undefined });
+    httpTesting.expectOne('/cart').flush(
+      { code: 'INVALID_SESSION' },
+      { status: 401, statusText: 'Unauthorized' },
+    );
+
+    http.get('/products').subscribe({ error: () => undefined });
+    httpTesting.expectOne('/products').flush(
+      { code: 'INVALID_SESSION' },
+      { status: 401, statusText: 'Unauthorized' },
+    );
+
+    expect(overlayService.activeOverlay()).toBe('login');
+    expect(overlayService.returnUrl()).toBe('/cart');
+    expect(overlayService.loginReason()).toBe('invalid-session');
+    expect(logoutCalls).toBe(2);
   });
 });

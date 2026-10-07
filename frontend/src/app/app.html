@@ -3,12 +3,17 @@
 
   <nav aria-label="Navegación principal">
     @if (isAuthenticated()) {
+      <a routerLink="/account">Mi cuenta</a>
       <button type="button" (click)="openLogoutConfirmation()">Salir</button>
     } @else {
       <button type="button" (click)="goToLogin()">Ingresar</button>
     }
 
-    <a routerLink="/cart">Ver carrito</a>
+    @if (isCheckoutOrPedido()) {
+      <button type="button" (click)="goHome()">Volver al inicio</button>
+    } @else {
+      <button type="button" (click)="openCart()">Ver carrito</button>
+    }
   </nav>
 </header>
 
@@ -32,6 +37,29 @@
 }
 
 <main>
-  <app-product-list />
-  <router-outlet />
+  <router-outlet /> 
 </main>
+
+@if (activeOverlay() === 'login') {
+  <div class="overlay" (click)="closeOverlay()">
+    <div class="overlay-content" (click)="$event.stopPropagation()">
+      <app-login />
+    </div>
+  </div>
+}
+
+@if (activeOverlay() === 'register') {
+  <div class="overlay" (click)="closeOverlay()">
+    <div class="overlay-content" (click)="$event.stopPropagation()">
+      <app-register />
+    </div>
+  </div>
+}
+
+@if (activeOverlay() === 'cart') {
+  <div class="overlay" (click)="closeOverlay()">
+    <div class="overlay-content" (click)="$event.stopPropagation()">
+      <app-cart />
+    </div>
+  </div>
+}

@@ -1,0 +1,81 @@
+<section class="checkout-card">
+  <h2>Método de entrega</h2>
+
+  <fieldset>
+    <legend>Elegí cómo querés recibir tu compra</legend>
+    <label>
+      <input
+        type="radio"
+        name="delivery-method"
+        [checked]="selectedMethod() === 'PICKUP'"
+        (change)="selectMethod('PICKUP')"
+      />
+      Retiro por el local
+    </label>
+    <label>
+      <input
+        type="radio"
+        name="delivery-method"
+        [checked]="selectedMethod() === 'DELIVERY'"
+        (change)="selectMethod('DELIVERY')"
+      />
+      Envío a domicilio
+    </label>
+  </fieldset>
+
+  @if (hasSubmitted() && !selectedMethod()) {
+    <p>Seleccioná un método de entrega.</p>
+  }
+
+  @if (selectedMethod() === 'PICKUP') {
+    <section>
+      <h3>Retiro por el local</h3>
+      <p>Dirección: {{ pickupAddress }}</p>
+      <p>Horario estimado de retiro: {{ pickupSchedule }}</p>
+    </section>
+  }
+
+  @if (selectedMethod() === 'DELIVERY') {
+    <section>
+      <h3>Dirección de entrega</h3>
+
+      <p>
+        <label for="delivery-calle">Calle</label>
+        <input id="delivery-calle" name="calle" [ngModel]="address().calle" (ngModelChange)="updateAddress('calle', $event)" />
+      </p>
+      <p>
+        <label for="delivery-numero">Número</label>
+        <input id="delivery-numero" name="numero" [ngModel]="address().numero" (ngModelChange)="updateAddress('numero', $event)" />
+      </p>
+      <p>
+        <label for="delivery-localidad">Localidad</label>
+        <input id="delivery-localidad" name="localidad" [ngModel]="address().localidad" (ngModelChange)="updateAddress('localidad', $event)" />
+      </p>
+      <p>
+        <label for="delivery-codigo-postal">Código postal</label>
+        <input id="delivery-codigo-postal" name="codigoPostal" [ngModel]="address().codigoPostal" (ngModelChange)="updateAddress('codigoPostal', $event)" />
+      </p>
+      <p>
+        <label for="delivery-piso">Piso (opcional)</label>
+        <input id="delivery-piso" name="piso" [ngModel]="address().piso" (ngModelChange)="updateAddress('piso', $event)" />
+      </p>
+      <p>
+        <label for="delivery-departamento">Departamento (opcional)</label>
+        <input id="delivery-departamento" name="departamento" [ngModel]="address().departamento" (ngModelChange)="updateAddress('departamento', $event)" />
+      </p>
+      <p>
+        <label for="delivery-especificaciones">Especificaciones para la entrega (opcional)</label>
+        <textarea id="delivery-especificaciones" name="especificaciones" [ngModel]="address().especificaciones" (ngModelChange)="updateAddress('especificaciones', $event)"></textarea>
+      </p>
+
+      @if (hasSubmitted() && !isAddressValid()) {
+        <p>Completá calle, número, localidad y código postal.</p>
+      }
+    </section>
+  }
+
+  <div class="delivery-actions">
+    <button type="button" (click)="goBack()">Volver</button>
+    <button type="button" (click)="continue()">Continuar</button>
+  </div>
+</section>

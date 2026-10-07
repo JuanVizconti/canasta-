@@ -1,11 +1,13 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, signal } from '@angular/core';
 import { Observable, tap } from 'rxjs';
+import { environment } from '../../../enviroments/enviroment';
 import { Cart } from '../model/cart.interface';
 
 @Injectable({ providedIn: 'root' })
 export class CartService {
-  private readonly cartUrl = 'http://localhost:3000/cart';
+  private readonly apiUrl = environment.apiUrl;
+  private readonly cartUrl = `${this.apiUrl}/cart`;
 
   private readonly _cart = signal<Cart | null>(null);
   readonly cart = this._cart.asReadonly();

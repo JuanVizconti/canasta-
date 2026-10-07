@@ -2,8 +2,8 @@
   <button class="close-button" type="button" aria-label="Cerrar" (click)="close()">×</button>
   <h2 id="login-title">Iniciar sesión</h2>
 
-  @if (sessionMessage()) {
-    <p>{{ sessionMessage() }}</p>
+  @if (loginReason() === 'invalid-session') {
+    <p>Tu sesión ya no es válida. Iniciá sesión nuevamente.</p>
   }
 
   <form (ngSubmit)="submit()">
