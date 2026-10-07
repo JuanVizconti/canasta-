@@ -30,7 +30,8 @@ export class MercadoPagoService {
       return false;
     }
 
-    const manifest = `id:${dataId};request-id:${requestId};ts:${signatureParts.ts};`;
+    // Mercado Pago signs the webhook manifest using data.id normalized to lowercase.
+    const manifest = `id:${dataId.toLowerCase()};request-id:${requestId};ts:${signatureParts.ts};`;
     const computedHash = createHmac('sha256', secret)
       .update(manifest)
       .digest('hex');

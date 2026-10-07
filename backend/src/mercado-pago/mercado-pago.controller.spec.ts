@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { MercadoPagoController } from './mercado-pago.controller';
 import { MercadoPagoService } from './mercado-pago.service';
+import { PedidoService } from '../pedido/pedido.service';
 
 describe('MercadoPagoController', () => {
   let controller: MercadoPagoController;
@@ -14,6 +15,7 @@ describe('MercadoPagoController', () => {
     >
   >;
   let logSpy: jest.SpyInstance;
+  let pedidoService: jest.Mocked<Pick<PedidoService, 'processMercadoPagoOrder'>>;
 
   beforeEach(() => {
     mercadoPagoService = {
@@ -21,8 +23,12 @@ describe('MercadoPagoController', () => {
       getWebhookDataId: jest.fn(),
       getOrderById: jest.fn(),
     };
+    pedidoService = {
+      processMercadoPagoOrder: jest.fn(),
+    };
     controller = new MercadoPagoController(
       mercadoPagoService as unknown as MercadoPagoService,
+      pedidoService as unknown as PedidoService,
     );
     logSpy = jest.spyOn(console, 'log').mockImplementation();
   });
@@ -46,6 +52,12 @@ describe('MercadoPagoController', () => {
       received: true,
     });
     expect(mercadoPagoService.getOrderById).toHaveBeenCalledWith('mp-order-42');
+    expect(pedidoService.processMercadoPagoOrder).toHaveBeenCalledWith({
+      providerOrderId: 'mp-order-42',
+      externalReference: '42',
+      status: 'processed',
+      statusDetail: 'accredited',
+    });
     expect(logSpy).toHaveBeenCalledWith('Mercado Pago order fetched');
   });
 
@@ -60,6 +72,7 @@ describe('MercadoPagoController', () => {
     )).rejects.toThrow(UnauthorizedException);
 
     expect(mercadoPagoService.getOrderById).not.toHaveBeenCalled();
+    expect(pedidoService.processMercadoPagoOrder).not.toHaveBeenCalled();
   });
 
   it('rejects a validly signed webhook without data.id', async () => {
@@ -70,6 +83,7 @@ describe('MercadoPagoController', () => {
       .rejects.toThrow(BadRequestException);
 
     expect(mercadoPagoService.getOrderById).not.toHaveBeenCalled();
+    expect(pedidoService.processMercadoPagoOrder).not.toHaveBeenCalled();
   });
 
   it('propagates remote order failures instead of acknowledging the webhook', async () => {
@@ -83,5 +97,26 @@ describe('MercadoPagoController', () => {
       'signature',
       'request-42',
     )).rejects.toThrow('provider unavailable');
+    expect(pedidoService.processMercadoPagoOrder).not.toHaveBeenCalled();
+  });
+
+  it('propagates processing failures instead of acknowledging the webhook', async () => {
+    const order = {
+      providerOrderId: 'mp-order-42',
+      externalReference: '42',
+      status: 'processed',
+      statusDetail: 'accredited',
+    };
+    mercadoPagoService.validateWebhookSignature.mockReturnValue(true);
+    mercadoPagoService.getWebhookDataId.mockReturnValue('mp-order-42');
+    mercadoPagoService.getOrderById.mockResolvedValue(order);
+    pedidoService.processMercadoPagoOrder.mockRejectedValue(new Error('incompatible state'));
+
+    await expect(controller.webhook(
+      { data: { id: 'mp-order-42' } },
+      {},
+      'signature',
+      'request-42',
+    )).rejects.toThrow('incompatible state');
   });
 });

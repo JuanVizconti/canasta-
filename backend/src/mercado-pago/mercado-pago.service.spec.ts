@@ -260,16 +260,17 @@ describe('MercadoPagoService', () => {
     const webhookSecret = 'webhook-test-secret';
     const requestId = 'request-42';
     const timestamp = '1729623876';
-    const dataId = 'ORDTST01ABC123';
+    const dataId = 'ORDTST01ABC123XYZ';
 
-    const createSignature = (id = dataId) => {
-      const manifest = `id:${id};request-id:${requestId};ts:${timestamp};`;
+    const createSignature = (id = dataId, normalizeId = true) => {
+      const manifestId = normalizeId ? id.toLowerCase() : id;
+      const manifest = `id:${manifestId};request-id:${requestId};ts:${timestamp};`;
       const hash = createHmac('sha256', webhookSecret).update(manifest).digest('hex');
 
       return `v1=${hash}, ts=${timestamp}`;
     };
 
-    it('preserves the exact data.id case in the signature manifest', () => {
+    it('normalizes data.id to lowercase in the signature manifest', () => {
       const service = new MercadoPagoService();
 
       expect(service.validateWebhookSignature(
@@ -278,6 +279,17 @@ describe('MercadoPagoService', () => {
         createSignature(),
         requestId,
       )).toBe(true);
+    });
+
+    it('rejects a signature calculated with the original data.id case', () => {
+      const service = new MercadoPagoService();
+
+      expect(service.validateWebhookSignature(
+        { data: { id: dataId } },
+        {},
+        createSignature(dataId, false),
+        requestId,
+      )).toBe(false);
     });
 
     it('uses data.id from the query when it is present', () => {
@@ -289,6 +301,17 @@ describe('MercadoPagoService', () => {
         createSignature(),
         requestId,
       )).toBe(true);
+    });
+
+    it('rejects a webhook without data.id', () => {
+      const service = new MercadoPagoService();
+
+      expect(service.validateWebhookSignature(
+        { data: {} },
+        {},
+        createSignature(),
+        requestId,
+      )).toBe(false);
     });
 
     it.each([

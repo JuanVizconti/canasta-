@@ -11,11 +11,14 @@ import {
 } from '@prisma/client';
 import { CartService } from '../cart/cart.service';
 import { MercadoPagoService } from '../mercado-pago/mercado-pago.service';
+import { MercadoPagoOrderDetails } from '../mercado-pago/mercado-pago.types';
 import { CreatePedidoDto } from './dto/create-pedido.dto';
 import { DeliveryMethod } from './interfaces/delivery-method.enum';
 import { QuotePedidoDto } from './dto/quote-pedido.dto';
 import { PedidoErrorCode } from './interfaces/pedido-error-code.enum';
 import { PedidoMapper, pedidoDetailInclude } from './pedido.mapper';
+import { mapMercadoPagoOrderStatus } from './mercado-pago-order-status.mapper';
+import { MercadoPagoOrderProcessService } from './mercado-pago-order-process.service';
 
 @Injectable()
 export class PedidoService implements OnModuleDestroy {
@@ -29,6 +32,7 @@ export class PedidoService implements OnModuleDestroy {
   constructor(
     private readonly cartService: CartService,
     private readonly mercadoPagoService: MercadoPagoService,
+    private readonly mercadoPagoOrderProcessService: MercadoPagoOrderProcessService,
   ) {
     const connectionString = process.env.DATABASE_URL;
 
@@ -69,137 +73,6 @@ export class PedidoService implements OnModuleDestroy {
     }
 
     return PedidoMapper.toDetail(pedido);
-  }
-
-  async retryMercadoPagoPayment(userId: number, pedidoId: number) {
-    const pedido = await this.prisma.pedido.findFirst({
-      where: { id: pedidoId, userId },
-      select: {
-        id: true,
-        estado: true,
-        total: true,
-        createdAt: true,
-        expiresAt: true,
-        user: { select: { email: true } },
-        payment: {
-          select: {
-            method: true,
-            status: true,
-            idempotencyKey: true,
-            providerOrderId: true,
-            checkoutUrl: true,
-          },
-        },
-      },
-    });
-
-    if (!pedido) {
-      throw new NotFoundException({
-        statusCode: HttpStatus.NOT_FOUND,
-        code: PedidoErrorCode.PEDIDO_NOT_FOUND,
-        message: 'Pedido no encontrado.',
-      });
-    }
-
-    const payment = pedido.payment;
-    if (
-      pedido.estado !== PedidoEstado.PENDING ||
-      !payment ||
-      payment.method !== PaymentMethod.MERCADO_PAGO ||
-      payment.status !== PaymentStatus.PENDING ||
-      !payment.idempotencyKey ||
-      !pedido.expiresAt
-    ) {
-      throw this.paymentRetryNotAllowed();
-    }
-
-    if (pedido.expiresAt.getTime() <= Date.now()) {
-      throw new BadRequestException({
-        statusCode: HttpStatus.BAD_REQUEST,
-        code: PedidoErrorCode.PAYMENT_EXPIRED,
-        message: 'El pedido ya expiró y no puede reintentar el pago.',
-      });
-    }
-
-    if (payment.checkoutUrl) {
-      return this.mercadoPagoRetryResponse(pedido, payment.checkoutUrl, 'READY');
-    }
-  
-    const idempotencyKey = randomUUID();
-    await this.prisma.payment.update({
-      where: { pedidoId: pedido.id },
-      data: { idempotencyKey },
-    });
-
-    try {
-      const order = await this.mercadoPagoService.createOrder({
-        pedidoId: pedido.id,
-        idempotencyKey,
-        total: pedido.total.toFixed(2),
-        expirationTime: this.remainingExpirationTime(pedido.expiresAt),
-        payerEmail: pedido.user.email,
-      });
-
-      await this.prisma.payment.update({
-        where: { pedidoId: pedido.id },
-        data: {
-          providerOrderId: order.providerOrderId,
-          checkoutUrl: order.checkoutUrl,
-        },
-      });
-
-      return this.mercadoPagoRetryResponse(pedido, order.checkoutUrl, 'READY');
-    } catch {
-      return this.mercadoPagoRetryResponse(pedido, null, 'FAILED');
-    }
-  }
-
-  async quote(userId: number, { deliveryMethod }: QuotePedidoDto) {
-    const subtotal = await this.cartService.getSubtotalForUser(userId);
-    const pricing = this.calculatePricing(subtotal, deliveryMethod);
-
-    return {
-      subtotal: pricing.subtotal.toFixed(2),
-      serviceFee: pricing.serviceFee.toFixed(2),
-      deliveryFee: pricing.deliveryFee.toFixed(2),
-      total: pricing.total.toFixed(2),
-    };
-  }
-
-  private paymentRetryNotAllowed() {
-    return new BadRequestException({
-      statusCode: HttpStatus.BAD_REQUEST,
-      code: PedidoErrorCode.PAYMENT_RETRY_NOT_ALLOWED,
-      message: 'El pago del pedido no puede reintentarse.',
-    });
-  }
-
-  private remainingExpirationTime(expiresAt: Date): string {
-    const remainingSeconds = Math.ceil((expiresAt.getTime() - Date.now()) / 1000);
-    const minutes = Math.floor(remainingSeconds / 60);
-    const seconds = remainingSeconds % 60;
-
-    return seconds === 0 ? `PT${minutes}M` : `PT${minutes}M${seconds}S`;
-  }
-
-  private mercadoPagoRetryResponse(
-    pedido: { id: number; estado: PedidoEstado; total: Prisma.Decimal; payment: { method: PaymentMethod; status: PaymentStatus } | null },
-    checkoutUrl: string | null,
-    paymentInitializationStatus: 'READY' | 'FAILED',
-  ) {
-    return {
-      id: pedido.id,
-      estado: pedido.estado,
-      total: pedido.total.toFixed(2),
-      payment: pedido.payment
-        ? {
-            method: pedido.payment.method,
-            status: pedido.payment.status,
-            checkoutUrl,
-          }
-        : null,
-      paymentInitialization: { status: paymentInitializationStatus },
-    };
   }
 
   private async createCashPedido(
@@ -382,11 +255,120 @@ export class PedidoService implements OnModuleDestroy {
     };
   }
 }
+
+  async retryMercadoPagoPayment(userId: number, pedidoId: number) {
+    const pedido = await this.prisma.pedido.findFirst({
+      where: { id: pedidoId, userId },
+      select: {
+        id: true,
+        estado: true,
+        total: true,
+        createdAt: true,
+        expiresAt: true,
+        user: { select: { email: true } },
+        payment: {
+          select: {
+            method: true,
+            status: true,
+            idempotencyKey: true,
+            providerOrderId: true,
+            checkoutUrl: true,
+          },
+        },
+      },
+    });
+
+    if (!pedido) {
+      throw new NotFoundException({
+        statusCode: HttpStatus.NOT_FOUND,
+        code: PedidoErrorCode.PEDIDO_NOT_FOUND,
+        message: 'Pedido no encontrado.',
+      });
+    }
+
+    const payment = pedido.payment;
+    if (
+      pedido.estado !== PedidoEstado.PENDING ||
+      !payment ||
+      payment.method !== PaymentMethod.MERCADO_PAGO ||
+      payment.status !== PaymentStatus.PENDING ||
+      !payment.idempotencyKey ||
+      !pedido.expiresAt
+    ) {
+      throw this.paymentRetryNotAllowed();
+    }
+
+    if (pedido.expiresAt.getTime() <= Date.now()) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        code: PedidoErrorCode.PAYMENT_EXPIRED,
+        message: 'El pedido ya expiró y no puede reintentar el pago.',
+      });
+    }
+
+    if (payment.checkoutUrl) {
+      return this.mercadoPagoRetryResponse(pedido, payment.checkoutUrl, 'READY');
+    }
   
+    const idempotencyKey = randomUUID();
+    await this.prisma.payment.update({
+      where: { pedidoId: pedido.id },
+      data: { idempotencyKey },
+    });
+
+    try {
+      const order = await this.mercadoPagoService.createOrder({
+        pedidoId: pedido.id,
+        idempotencyKey,
+        total: pedido.total.toFixed(2),
+        expirationTime: this.remainingExpirationTime(pedido.expiresAt),
+        payerEmail: pedido.user.email,
+      });
+
+      await this.prisma.payment.update({
+        where: { pedidoId: pedido.id },
+        data: {
+          providerOrderId: order.providerOrderId,
+          checkoutUrl: order.checkoutUrl,
+        },
+      });
+
+      return this.mercadoPagoRetryResponse(pedido, order.checkoutUrl, 'READY');
+    } catch {
+      return this.mercadoPagoRetryResponse(pedido, null, 'FAILED');
+    }
+  }
+
+  async processMercadoPagoOrder(order: MercadoPagoOrderDetails): Promise<void> {
+    const action = mapMercadoPagoOrderStatus(order.status, order.statusDetail);
+    if (action === 'NO_ACTION' || action === 'PARTIALLY_REFUNDED') {
+      return;
+    }
+
+    const pedidoId = Number(order.externalReference);
+    if (!Number.isFinite(pedidoId) || !Number.isInteger(pedidoId) || pedidoId <= 0) {
+      throw new Error('Mercado Pago order external reference is invalid');
+    }
+
+    await this.mercadoPagoOrderProcessService.process(action, pedidoId, order);
+  }
+
+  async quote(userId: number, { deliveryMethod }: QuotePedidoDto) {
+    const subtotal = await this.cartService.getSubtotalForUser(userId);
+    const pricing = this.calculatePricing(subtotal, deliveryMethod);
+
+    return {
+      subtotal: pricing.subtotal.toFixed(2),
+      serviceFee: pricing.serviceFee.toFixed(2),
+      deliveryFee: pricing.deliveryFee.toFixed(2),
+      total: pricing.total.toFixed(2),
+    };
+  }
+
   async onModuleDestroy() {
     await this.prisma.$disconnect();
   }
-
+  
   /*---------------------------------Helpers precio----------------------------------------*/
   
   private calculateDeliveryFee(
@@ -394,10 +376,10 @@ export class PedidoService implements OnModuleDestroy {
     deliveryMethod: DeliveryMethod,
   ): Prisma.Decimal {
     return deliveryMethod === DeliveryMethod.PICKUP
-      ? new Prisma.Decimal(0)
-      : subtotal.mul(PedidoService.deliveryPercentage);
+    ? new Prisma.Decimal(0)
+    : subtotal.mul(PedidoService.deliveryPercentage);
   }
-
+  
   private calculateTotal(
     subtotal: Prisma.Decimal,
     serviceFee: Prisma.Decimal,
@@ -405,7 +387,7 @@ export class PedidoService implements OnModuleDestroy {
   ): Prisma.Decimal {
     return subtotal.plus(serviceFee).plus(deliveryFee);
   }
-
+  
   private calculatePricing(subtotal: Prisma.Decimal, deliveryMethod: DeliveryMethod) {
     if (subtotal.lessThan(PedidoService.minimumPurchase)) {
       throw new BadRequestException({
@@ -414,10 +396,10 @@ export class PedidoService implements OnModuleDestroy {
         message: 'El monto mínimo de compra es de $10.000',
       });
     }
-
+    
     const serviceFee = PedidoService.serviceFee;
     const deliveryFee = this.calculateDeliveryFee(subtotal, deliveryMethod);
-
+    
     return {
       subtotal,
       serviceFee,
@@ -425,7 +407,7 @@ export class PedidoService implements OnModuleDestroy {
       total: this.calculateTotal(subtotal, serviceFee, deliveryFee),
     };
   }
-
+  
   private calculateSubtotal(
     items: Array<{ cantidad: number; product: { precio: Prisma.Decimal } }>,
   ): Prisma.Decimal {
@@ -434,7 +416,7 @@ export class PedidoService implements OnModuleDestroy {
       new Prisma.Decimal(0),
     );
   }
-
+  
   /*--------------------------------Helpers create-------------------------------------------*/
   
   private getCartForCheckout(transaction: Prisma.TransactionClient, userId: number){
@@ -449,7 +431,7 @@ export class PedidoService implements OnModuleDestroy {
       },
     });
   }
-
+  
   private biuldPedidoItems(
     items: Array<{
       productId: number;
@@ -467,10 +449,10 @@ export class PedidoService implements OnModuleDestroy {
       marca: item.product.marca,
       cantidad: item.cantidad,
       unitPrice: item.product.precio,
-
+      
     }));
   }
-
+  
   private async decrementStock(
     transaction: Prisma.TransactionClient,
     items: Array<{
@@ -493,7 +475,7 @@ export class PedidoService implements OnModuleDestroy {
           },
         },
       });
-
+      
       if(updatedProducts.count !== 1){
         throw new BadRequestException({
           statusCode: HttpStatus.BAD_REQUEST,
@@ -503,7 +485,7 @@ export class PedidoService implements OnModuleDestroy {
       }
     }
   }
-
+  
   private async clearCart (
     transaction: Prisma.TransactionClient,
     cart: {id: number}| null,
@@ -511,13 +493,13 @@ export class PedidoService implements OnModuleDestroy {
     if(!cart){
       return;
     }
-
+    
     await transaction.cartItem.deleteMany({
       where: {
         cartId: cart.id,
       },
     });
-
+    
     await transaction.cart.update({
       where:{
         id: cart.id,
@@ -528,7 +510,17 @@ export class PedidoService implements OnModuleDestroy {
       },
     });
   }
-
+  
+  private remainingExpirationTime(expiresAt: Date): string {
+    const remainingSeconds = Math.ceil((expiresAt.getTime() - Date.now()) / 1000);
+    const minutes = Math.floor(remainingSeconds / 60);
+    const seconds = remainingSeconds % 60;
+    
+    return seconds === 0 ? `PT${minutes}M` : `PT${minutes}M${seconds}S`;
+  }
+  
+  /*--------------------------------------Mapers-------------------------------------------*/
+  
   private mapCreatedPedido(pedido:{
     id:number;
     estado:PedidoEstado;
@@ -548,10 +540,10 @@ export class PedidoService implements OnModuleDestroy {
   
   private toPrismaDeliveryMethod(deliveryMethod: DeliveryMethod): PrismaDeliveryMethod {
     return deliveryMethod === DeliveryMethod.PICKUP
-      ? PrismaDeliveryMethod.PICKUP
-      : PrismaDeliveryMethod.DELIVERY;
+    ? PrismaDeliveryMethod.PICKUP
+    : PrismaDeliveryMethod.DELIVERY;
   }
-
+  
   private getDeliveryAddress(delivery: CreatePedidoDto['delivery']) {
     if (delivery.method === DeliveryMethod.DELIVERY) {
       return {
@@ -564,7 +556,7 @@ export class PedidoService implements OnModuleDestroy {
         especificaciones: delivery.address?.especificaciones ?? null,
       };
     }
-
+    
     return {
       calle: null,
       numero: null,
@@ -574,5 +566,33 @@ export class PedidoService implements OnModuleDestroy {
       departamento: null,
       especificaciones: null,
     };
+  }
+  
+  private mercadoPagoRetryResponse(
+    pedido: { id: number; estado: PedidoEstado; total: Prisma.Decimal; payment: { method: PaymentMethod; status: PaymentStatus } | null },
+    checkoutUrl: string | null,
+    paymentInitializationStatus: 'READY' | 'FAILED',
+  ) {
+    return {
+      id: pedido.id,
+      estado: pedido.estado,
+      total: pedido.total.toFixed(2),
+      payment: pedido.payment
+      ? {
+        method: pedido.payment.method,
+        status: pedido.payment.status,
+        checkoutUrl,
+      }
+      : null,
+      paymentInitialization: { status: paymentInitializationStatus },
+    };
+  }
+
+  private paymentRetryNotAllowed() {
+    return new BadRequestException({
+      statusCode: HttpStatus.BAD_REQUEST,
+      code: PedidoErrorCode.PAYMENT_RETRY_NOT_ALLOWED,
+      message: 'El pago del pedido no puede reintentarse.',
+    });
   }
 }

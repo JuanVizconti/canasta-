@@ -2,11 +2,13 @@ import { BadRequestException } from '@nestjs/common';
 import { PaymentMethod, PaymentStatus, PedidoEstado, Prisma } from '@prisma/client';
 import { CartService } from '../cart/cart.service';
 import { MercadoPagoService } from '../mercado-pago/mercado-pago.service';
+import { MercadoPagoOrderDetails } from '../mercado-pago/mercado-pago.types';
 import { CreatePedidoDto } from './dto/create-pedido.dto';
 import { QuotePedidoDto } from './dto/quote-pedido.dto';
 import { DeliveryMethod } from './interfaces/delivery-method.enum';
 import { PedidoErrorCode } from './interfaces/pedido-error-code.enum';
 import { PedidoService } from './pedido.service';
+import { MercadoPagoOrderProcessService } from './mercado-pago-order-process.service';
 
 describe('PedidoService', () => {
   const createPedidoDto: CreatePedidoDto = {
@@ -36,7 +38,19 @@ describe('PedidoService', () => {
         checkoutUrl: 'https://mercadopago.example/checkout/27',
       }),
     } as unknown as MercadoPagoService;
-    return { service: new PedidoService(cartService, mercadoPagoService), cartService, mercadoPagoService };
+    const mercadoPagoOrderProcessService = {
+      process: jest.fn().mockResolvedValue(undefined),
+    } as unknown as MercadoPagoOrderProcessService;
+    return {
+      service: new PedidoService(
+        cartService,
+        mercadoPagoService,
+        mercadoPagoOrderProcessService,
+      ),
+      cartService,
+      mercadoPagoService,
+      mercadoPagoOrderProcessService,
+    };
   };
 
   const cartWithProduct = (price = '20000.00') => ({
@@ -104,6 +118,16 @@ describe('PedidoService', () => {
     (service as unknown as { prisma: typeof prisma }).prisma = prisma;
     return prisma;
   };
+
+  const approvedOrder = (
+    overrides: Partial<MercadoPagoOrderDetails> = {},
+  ): MercadoPagoOrderDetails => ({
+    providerOrderId: 'mp-order-approved',
+    externalReference: '24',
+    status: 'processed',
+    statusDetail: 'accredited',
+    ...overrides,
+  });
 
   it('creates a confirmed CASH pedido from the real cart and clears that cart atomically', async () => {
     const { service } = createService();
@@ -473,6 +497,44 @@ describe('PedidoService', () => {
     expect(prisma.pedido.create).not.toHaveBeenCalled();
     expect(prisma.payment.create).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('delegates an approved order using its numeric external reference', async () => {
+    const { service, mercadoPagoOrderProcessService } = createService();
+    const order = approvedOrder();
+
+    await expect(service.processMercadoPagoOrder(order)).resolves.toBeUndefined();
+
+    expect(mercadoPagoOrderProcessService.process).toHaveBeenCalledWith(
+      'APPROVED',
+      24,
+      order,
+    );
+  });
+
+  it.each(['', 'abc', '24abc', '0', '-1'])
+  ('rejects an invalid external reference without delegating: %s', async (externalReference) => {
+    const { service, mercadoPagoOrderProcessService } = createService();
+
+    await expect(service.processMercadoPagoOrder(approvedOrder({ externalReference })))
+      .rejects.toThrow('Mercado Pago order external reference is invalid');
+
+    expect(mercadoPagoOrderProcessService.process).not.toHaveBeenCalled();
+  });
+
+  it('does not delegate NO_ACTION or PARTIALLY_REFUNDED decisions', async () => {
+    const { service, mercadoPagoOrderProcessService } = createService();
+
+    await service.processMercadoPagoOrder(approvedOrder({
+      status: 'processing',
+      statusDetail: 'in_process',
+    }));
+    await service.processMercadoPagoOrder(approvedOrder({
+      status: 'processed',
+      statusDetail: 'partially_refunded',
+    }));
+
+    expect(mercadoPagoOrderProcessService.process).not.toHaveBeenCalled();
   });
 
   it('quotes delivery using the cart subtotal and Decimal calculations', async () => {

@@ -29,6 +29,8 @@ enum PaymentStatus {
   APPROVED
   REJECTED
   CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
 }
 
 model Product {

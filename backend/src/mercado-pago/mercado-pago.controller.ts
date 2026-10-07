@@ -7,11 +7,15 @@ import {
   Query,
   UnauthorizedException,
 } from '@nestjs/common';
+import { PedidoService } from '../pedido/pedido.service';
 import { MercadoPagoService } from './mercado-pago.service';
 
 @Controller('mercado-pago')
 export class MercadoPagoController {
-  constructor(private readonly mercadoPagoService: MercadoPagoService) {}
+  constructor(
+    private readonly mercadoPagoService: MercadoPagoService,
+    private readonly pedidoService: PedidoService,
+  ) {}
 
   @Post('webhook')
   async webhook(
@@ -41,6 +45,7 @@ export class MercadoPagoController {
     }
 
     const order = await this.mercadoPagoService.getOrderById(orderId);
+    await this.pedidoService.processMercadoPagoOrder(order);
 
     console.log('Mercado Pago order fetched');
     console.log({
