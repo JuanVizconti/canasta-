@@ -35,6 +35,7 @@ describe('App', () => {
           provide: AuthService,
           useValue: {
             isAuthenticated: authenticatedState.asReadonly(),
+            getCurrentUser: () => of({ id: 7, nombre: 'Juan', email: 'juan@email.com' }),
             logout: () => {
               logoutCalls++;
               authenticatedState.set(false);
@@ -66,6 +67,7 @@ describe('App', () => {
         {
           provide: PedidoService,
           useValue: {
+            getPedidos: () => of([]),
             getById: (id: number) =>
               of({
                 id,
@@ -111,6 +113,27 @@ describe('App', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('Salir');
+  });
+
+  it('shows Mi cuenta when there is an active session', () => {
+    authenticatedState.set(true);
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const accountLink = fixture.nativeElement.querySelector('[routerlink="/account"]') as HTMLAnchorElement;
+    expect(accountLink.textContent).toContain('Mi cuenta');
+  });
+
+  it('navigates to account from the authenticated header link', async () => {
+    authenticatedState.set(true);
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    fixture.detectChanges();
+
+    (fixture.nativeElement.querySelector('[routerlink="/account"]') as HTMLAnchorElement).click();
+    await fixture.whenStable();
+
+    expect(router.url).toBe('/account');
   });
 
   it('logs out and navigates home from the header', async () => {

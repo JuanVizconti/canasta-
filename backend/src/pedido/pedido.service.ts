@@ -75,6 +75,24 @@ export class PedidoService implements OnModuleDestroy {
     return PedidoMapper.toDetail(pedido);
   }
 
+  async findAllByUser(userId: number) {
+    const pedidos = await this.prisma.pedido.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        createdAt: true,
+        total: true,
+        estado: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return pedidos.map((pedido) => ({
+      ...pedido,
+      total: pedido.total.toFixed(2),
+    }));
+  }
+
   private async createCashPedido(
     userId: number, createPedidoDto: CreatePedidoDto,
   ){

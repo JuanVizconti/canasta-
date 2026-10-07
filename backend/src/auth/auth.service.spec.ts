@@ -65,6 +65,32 @@ describe('AuthService', () => {
     expect(jwtService.signAsync).toHaveBeenCalledWith({ sub: 1 });
   });
 
+  it('returns only the authenticated user profile fields required by the client', async () => {
+    const jwtService = { signAsync: jest.fn() } as unknown as JwtService;
+    const service = new AuthService(jwtService);
+    const prisma = {
+      user: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 1,
+          usuario: 'Usuario de prueba',
+          email,
+        }),
+      },
+    };
+
+    (service as unknown as { prisma: typeof prisma }).prisma = prisma;
+
+    await expect(service.getProfile(1)).resolves.toEqual({
+      id: 1,
+      nombre: 'Usuario de prueba',
+      email,
+    });
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({
+      where: { id: 1 },
+      select: { id: true, usuario: true, email: true },
+    });
+  });
+
   async function expectUnauthorizedCredentials(login: Promise<unknown>) {
     try {
       await login;

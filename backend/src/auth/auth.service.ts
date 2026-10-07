@@ -40,6 +40,31 @@ export class AuthService implements OnModuleDestroy {
     return { accessToken };
   }
 
+  async getProfile(userId: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        usuario: true,
+        email: true,
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException({
+        statusCode: HttpStatus.UNAUTHORIZED,
+        code: AuthErrorCode.INVALID_SESSION,
+        message: 'Unauthorized',
+      });
+    }
+
+    return {
+      id: user.id,
+      nombre: user.usuario,
+      email: user.email,
+    };
+  }
+
   async onModuleDestroy() {
     await this.prisma.$disconnect();
   }

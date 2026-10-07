@@ -4,7 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { environment } from '../../../enviroments/enviroment';
 import { PedidoQuote } from '../model/pedido-quote.interface';
 import { CreatePedidoRequest, CreatedPedido } from '../model/create-pedido.interface';
-import { Pedido, RetryPaymentResponse } from '../model/pedido.interface';
+import { Pedido, PedidoSummary, RetryPaymentResponse } from '../model/pedido.interface';
 import { PedidoService } from './pedido.service';
 
 describe('PedidoService', () => {
@@ -92,6 +92,21 @@ describe('PedidoService', () => {
     expect(request.request.method).toBe('GET');
     expect(request.request.headers.has('Authorization')).toBe(false);
     request.flush(pedido);
+  });
+
+  it('gets the authenticated user pedido summaries', () => {
+    const summaries: PedidoSummary[] = [{
+      id: 27,
+      createdAt: '2026-10-07T20:15:00.000Z',
+      total: '12500.00',
+      estado: 'CONFIRMED',
+    }];
+
+    service.getPedidos().subscribe((response) => expect(response).toEqual(summaries));
+
+    const request = httpTesting.expectOne(`${environment.apiUrl}/pedidos`);
+    expect(request.request.method).toBe('GET');
+    request.flush(summaries);
   });
 
   it('retries a Mercado Pago payment without sending a request body', () => {

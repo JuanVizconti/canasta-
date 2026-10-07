@@ -3,6 +3,7 @@
 
   <nav aria-label="Navegación principal">
     @if (isAuthenticated()) {
+      <a routerLink="/account">Mi cuenta</a>
       <button type="button" (click)="openLogoutConfirmation()">Salir</button>
     } @else {
       <button type="button" (click)="goToLogin()">Ingresar</button>

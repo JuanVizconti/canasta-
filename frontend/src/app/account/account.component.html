@@ -1,0 +1,33 @@
+<section class="account-card">
+  <h2>Mi cuenta</h2>
+
+  @if (isLoading()) {
+    <p>Cargando cuenta...</p>
+  } @else if (errorMessage()) {
+    <p>{{ errorMessage() }}</p>
+  } @else if (user(); as user) {
+    <section>
+      <h3>Datos personales</h3>
+      <p>Nombre: {{ user.nombre }}</p>
+      <p>Email: {{ user.email }}</p>
+    </section>
+
+    <section>
+      <h3>Historial de pedidos</h3>
+
+      @if (pedidos().length === 0) {
+        <p>Aún no tenés pedidos.</p>
+      } @else {
+        @for (pedido of pedidos(); track pedido.id) {
+          <article>
+            <h4>Pedido #{{ pedido.id }}</h4>
+            <p>Fecha: {{ pedido.createdAt | date: 'dd/MM/yyyy, HH:mm' }}</p>
+            <p>Total: ${{ pedido.total }}</p>
+            <p>Estado: {{ pedidoStatusLabel(pedido.estado) }}</p>
+            <button type="button" (click)="viewPedido(pedido.id)">Ver pedido</button>
+          </article>
+        }
+      }
+    </section>
+  }
+</section>

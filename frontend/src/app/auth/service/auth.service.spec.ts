@@ -107,4 +107,15 @@ describe('AuthService', () => {
     expect(localStorage.getItem('accessToken')).toBeNull();
     expect(service.isAuthenticated()).toBe(false);
   });
+
+  it('gets the current authenticated user profile', () => {
+    service = TestBed.inject(AuthService);
+    const profile = { id: 1, nombre: 'Juan', email: 'juan@email.com' };
+
+    service.getCurrentUser().subscribe((response) => expect(response).toEqual(profile));
+
+    const request = httpTesting.expectOne(`${environment.apiUrl}/auth/me`);
+    expect(request.request.method).toBe('GET');
+    request.flush(profile);
+  });
 });

@@ -17,4 +17,15 @@ describe('AuthController', () => {
     });
     expect(authService.login).toHaveBeenCalledWith(loginDto);
   });
+
+  it('uses the authenticated user id to retrieve the current profile', async () => {
+    const profile = { id: 7, nombre: 'Juan', email: 'juan@email.com' };
+    const authService = {
+      getProfile: jest.fn().mockResolvedValue(profile),
+    } as unknown as AuthService;
+    const controller = new AuthController(authService);
+
+    await expect(controller.me({ user: { id: 7 } } as never)).resolves.toEqual(profile);
+    expect(authService.getProfile).toHaveBeenCalledWith(7);
+  });
 });

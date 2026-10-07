@@ -351,6 +351,66 @@ describe('PedidoService', () => {
     }));
   });
 
+  it('lists only the authenticated user pedido summaries from newest to oldest', async () => {
+    const { service } = createService();
+    const pedidos = [
+      {
+        id: 42,
+        createdAt: new Date('2026-10-07T20:15:00.000Z'),
+        total: new Prisma.Decimal('12500'),
+        estado: PedidoEstado.CONFIRMED,
+      },
+      {
+        id: 41,
+        createdAt: new Date('2026-10-06T18:10:00.000Z'),
+        total: new Prisma.Decimal('10000'),
+        estado: PedidoEstado.CANCELLED,
+      },
+    ];
+    const prisma = {
+      pedido: { findMany: jest.fn().mockResolvedValue(pedidos) },
+    };
+    (service as unknown as { prisma: typeof prisma }).prisma = prisma;
+
+    await expect(service.findAllByUser(7)).resolves.toEqual([
+      {
+        id: 42,
+        createdAt: new Date('2026-10-07T20:15:00.000Z'),
+        total: '12500.00',
+        estado: PedidoEstado.CONFIRMED,
+      },
+      {
+        id: 41,
+        createdAt: new Date('2026-10-06T18:10:00.000Z'),
+        total: '10000.00',
+        estado: PedidoEstado.CANCELLED,
+      },
+    ]);
+    expect(prisma.pedido.findMany).toHaveBeenCalledWith({
+      where: { userId: 7 },
+      select: {
+        id: true,
+        createdAt: true,
+        total: true,
+        estado: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  });
+
+  it('returns an empty pedido history when the authenticated user has no pedidos', async () => {
+    const { service } = createService();
+    const prisma = {
+      pedido: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    (service as unknown as { prisma: typeof prisma }).prisma = prisma;
+
+    await expect(service.findAllByUser(7)).resolves.toEqual([]);
+    expect(prisma.pedido.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { userId: 7 },
+    }));
+  });
+
   it('uses the same not-found contract for a missing or foreign pedido payment retry', async () => {
     const { service, mercadoPagoService } = createService();
     const prisma = configureRetryPrisma(service, null);

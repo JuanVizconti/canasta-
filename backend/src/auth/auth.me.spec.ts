@@ -4,10 +4,14 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AuthErrorCode } from './interfaces/auth-error-code.enum';
 import { AuthModule } from './auth.module';
+import { AuthService } from './auth.service';
 
 describe('GET /auth/me', () => {
   let app: INestApplication;
   let jwtService: JwtService;
+  const authService = {
+    getProfile: jest.fn(),
+  };
   const invalidSessionResponse = {
     statusCode: 401,
     code: AuthErrorCode.INVALID_SESSION,
@@ -20,7 +24,10 @@ describe('GET /auth/me', () => {
 
     const module = await Test.createTestingModule({
       imports: [AuthModule],
-    }).compile();
+    })
+      .overrideProvider(AuthService)
+      .useValue(authService)
+      .compile();
 
     app = module.createNestApplication();
     await app.init();
@@ -31,14 +38,25 @@ describe('GET /auth/me', () => {
     await app.close();
   });
 
-  it('returns the authenticated user id for a valid token', async () => {
+  it('returns the authenticated user profile for a valid token', async () => {
+    authService.getProfile.mockResolvedValue({
+      id: 1,
+      nombre: 'Usuario de prueba',
+      email: 'user@example.com',
+    });
     const token = await jwtService.signAsync({ sub: 1 });
 
     await request(app.getHttpServer())
       .get('/auth/me')
       .set('Authorization', `Bearer ${token}`)
       .expect(200)
-      .expect({ id: 1 });
+      .expect({
+        id: 1,
+        nombre: 'Usuario de prueba',
+        email: 'user@example.com',
+      });
+
+    expect(authService.getProfile).toHaveBeenCalledWith(1);
   });
 
   it('returns INVALID_SESSION when no token is sent', async () => {

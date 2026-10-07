@@ -62,6 +62,13 @@ export interface Pedido {
   payment: PedidoPayment | null;
 }
 
+export interface PedidoSummary {
+  id: number;
+  createdAt: string;
+  total: string;
+  estado: PedidoEstado;
+}
+
 export interface RetryPaymentResponse {
   id: number;
   estado: PedidoEstado;

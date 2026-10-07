@@ -1,4 +1,6 @@
 import { PaymentMethod } from '@prisma/client';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PedidoController } from './pedido.controller';
 import { PedidoService } from './pedido.service';
 
@@ -35,6 +37,27 @@ describe('PedidoController', () => {
 
     await expect(controller.findOne(request as never, 27)).resolves.toEqual({ id: 27 });
     expect(pedidoService.findOneForUser).toHaveBeenCalledWith(7, 27);
+  });
+
+  it('keeps the pedido history endpoint protected by JwtAuthGuard', () => {
+    expect(Reflect.getMetadata(GUARDS_METADATA, PedidoController)).toContain(JwtAuthGuard);
+  });
+
+  it('uses the authenticated user id and delegates pedido history retrieval', async () => {
+    const summaries = [{
+      id: 27,
+      createdAt: new Date('2026-10-07T20:15:00.000Z'),
+      total: '12500.00',
+      estado: 'CONFIRMED',
+    }];
+    const pedidoService = {
+      findAllByUser: jest.fn().mockResolvedValue(summaries),
+    } as unknown as PedidoService;
+    const controller = new PedidoController(pedidoService);
+    const request = { user: { id: 7 } };
+
+    await expect(controller.findAll(request as never)).resolves.toEqual(summaries);
+    expect(pedidoService.findAllByUser).toHaveBeenCalledWith(7);
   });
 
   it('uses the authenticated user id and parsed id to retry a Mercado Pago payment', async () => {

@@ -3,6 +3,7 @@ import { Injectable, signal } from '@angular/core';
 import { Observable, switchMap, tap } from 'rxjs';
 import { environment } from '../../../enviroments/enviroment';
 import {
+  AuthenticatedUser,
   LoginRequest,
   LoginResponse,
   RegisterRequest,
@@ -13,6 +14,7 @@ import {
 export class AuthService {
   private readonly apiUrl = environment.apiUrl;
   private readonly authUrl = `${this.apiUrl}/auth/login`;
+  private readonly profileUrl = `${this.apiUrl}/auth/me`;
   private readonly usersUrl = `${this.apiUrl}/users`;
   private readonly authenticated = signal(localStorage.getItem('accessToken') !== null);
   readonly isAuthenticated = this.authenticated.asReadonly();
@@ -32,6 +34,10 @@ export class AuthService {
     return this.http.post<RegisterResponse>(this.usersUrl, request).pipe(
       switchMap(() => this.login({ email: request.email, password: request.password })),
     );
+  }
+
+  getCurrentUser(): Observable<AuthenticatedUser> {
+    return this.http.get<AuthenticatedUser>(this.profileUrl);
   }
 
   logout(): void {

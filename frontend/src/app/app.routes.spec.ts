@@ -4,6 +4,7 @@ import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { of } from 'rxjs';
 import { AuthService } from './auth/service/auth.service';
+import { AccountComponent } from './account/account.component';
 import { CartService } from './cart/service/cart.service';
 import { CheckoutComponent } from './checkout/checkout.component';
 import { CheckoutService } from './checkout/service/checkout.service';
@@ -24,6 +25,7 @@ describe('app routes', () => {
             isAuthenticated: signal(false).asReadonly(),
             login: () => of({ accessToken: 'jwt-token' }),
             register: () => of({ accessToken: 'jwt-token' }),
+            getCurrentUser: () => of({ id: 7, nombre: 'Juan', email: 'juan@email.com' }),
           },
         },
         {
@@ -53,6 +55,7 @@ describe('app routes', () => {
         {
           provide: PedidoService,
           useValue: {
+            getPedidos: () => of([]),
             getById: (id: number) => of({
               id,
               estado: 'CONFIRMED',
@@ -96,6 +99,14 @@ describe('app routes', () => {
     await harness.navigateByUrl('/checkout', CheckoutComponent);
 
     expect(harness.routeNativeElement?.textContent).toContain('Revisá tu carrito');
+  });
+
+  it('loads AccountComponent at /account', async () => {
+    const harness = await RouterTestingHarness.create();
+
+    await harness.navigateByUrl('/account', AccountComponent);
+
+    expect(harness.routeNativeElement?.textContent).toContain('Mi cuenta');
   });
 
   it('loads PedidoComponent at /pedidos/:id', async () => {

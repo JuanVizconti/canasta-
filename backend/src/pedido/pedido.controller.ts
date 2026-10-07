@@ -18,6 +18,11 @@ export class PedidoController {
     return this.pedidoService.quote(request.user.id, quotePedidoDto);
   }
 
+  @Get()
+  findAll(@Req() request: AuthenticatedRequest) {
+    return this.pedidoService.findAllByUser(request.user.id);
+  }
+
   @Get(':id')
   findOne(
     @Req() request: AuthenticatedRequest,

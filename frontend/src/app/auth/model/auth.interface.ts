@@ -19,6 +19,12 @@ export interface RegisterResponse {
   email: string;
 }
 
+export interface AuthenticatedUser {
+  id: number;
+  nombre: string;
+  email: string;
+}
+
 export type AuthErrorCode = 'INVALID_CREDENTIALS' | 'INVALID_SESSION';
 
 export interface AuthErrorResponse {
