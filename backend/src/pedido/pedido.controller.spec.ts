@@ -60,15 +60,4 @@ describe('PedidoController', () => {
     expect(pedidoService.findAllByUser).toHaveBeenCalledWith(7);
   });
 
-  it('uses the authenticated user id and parsed id to retry a Mercado Pago payment', async () => {
-    const result = { id: 27, paymentInitialization: { status: 'READY' } };
-    const pedidoService = {
-      retryMercadoPagoPayment: jest.fn().mockResolvedValue(result),
-    } as unknown as PedidoService;
-    const controller = new PedidoController(pedidoService);
-    const request = { user: { id: 7 } };
-
-    await expect(controller.retryMercadoPagoPayment(request as never, 27)).resolves.toEqual(result);
-    expect(pedidoService.retryMercadoPagoPayment).toHaveBeenCalledWith(7, 27);
-  });
 });

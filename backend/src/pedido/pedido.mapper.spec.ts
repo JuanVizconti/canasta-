@@ -63,7 +63,7 @@ describe('PedidoMapper', () => {
         productId: 11, nombre: 'Coca-Cola 2.25L', marca: 'Coca-Cola', cantidad: 2, unitPrice: '2500.50',
       }],
       subtotal: '20000.00', serviceFee: '500.00', deliveryFee: '2000.00', total: '22500.00',
-      payment: { method: PaymentMethod.CASH, status: PaymentStatus.PENDING, checkoutUrl: null },
+      payment: { method: PaymentMethod.CASH, status: PaymentStatus.PENDING },
     });
   });
 

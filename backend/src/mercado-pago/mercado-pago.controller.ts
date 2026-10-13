@@ -7,14 +7,15 @@ import {
   Query,
   UnauthorizedException,
 } from '@nestjs/common';
-import { PedidoService } from '../pedido/pedido.service';
+import { CheckoutSnapshotProcessService } from '../checkout-snapshot/checkout-snapshot-process.service';
+import { mapMercadoPagoOrderStatus } from '../pedido/mercado-pago-order-status.mapper';
 import { MercadoPagoService } from './mercado-pago.service';
 
 @Controller('mercado-pago')
 export class MercadoPagoController {
   constructor(
     private readonly mercadoPagoService: MercadoPagoService,
-    private readonly pedidoService: PedidoService,
+    private readonly checkoutSnapshotProcessService: CheckoutSnapshotProcessService,
   ) {}
 
   @Post('webhook')
@@ -45,7 +46,11 @@ export class MercadoPagoController {
     }
 
     const order = await this.mercadoPagoService.getOrderById(orderId);
-    await this.pedidoService.processMercadoPagoOrder(order);
+    const action = mapMercadoPagoOrderStatus(order.status, order.statusDetail);
+
+    if (action === 'APPROVED') {
+      await this.checkoutSnapshotProcessService.processApprovedOrder(order);
+    }
 
     console.log('Mercado Pago order fetched');
     console.log({

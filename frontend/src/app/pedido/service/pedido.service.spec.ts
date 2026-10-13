@@ -4,7 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { environment } from '../../../enviroments/enviroment';
 import { PedidoQuote } from '../model/pedido-quote.interface';
 import { CreatePedidoRequest, CreatedPedido } from '../model/create-pedido.interface';
-import { Pedido, PedidoSummary, RetryPaymentResponse } from '../model/pedido.interface';
+import { Pedido, PedidoSummary } from '../model/pedido.interface';
 import { PedidoService } from './pedido.service';
 
 describe('PedidoService', () => {
@@ -58,7 +58,7 @@ describe('PedidoService', () => {
       id: 27,
       estado: 'CONFIRMED',
       total: '20500.00',
-      payment: { method: 'CASH', status: 'PENDING', checkoutUrl: null },
+      payment: { method: 'CASH', status: 'PENDING' },
     };
 
     service.create(body).subscribe((pedido) => expect(pedido).toEqual(response));
@@ -83,7 +83,7 @@ describe('PedidoService', () => {
       serviceFee: '500.00',
       deliveryFee: '0.00',
       total: '20500.00',
-      payment: { method: 'CASH', status: 'PENDING', checkoutUrl: null },
+      payment: { method: 'CASH', status: 'PENDING' },
     };
 
     service.getById(27).subscribe((response) => expect(response).toEqual(pedido));
@@ -109,24 +109,4 @@ describe('PedidoService', () => {
     request.flush(summaries);
   });
 
-  it('retries a Mercado Pago payment without sending a request body', () => {
-    const response: RetryPaymentResponse = {
-      id: 27,
-      estado: 'PENDING',
-      total: '22500.00',
-      payment: {
-        method: 'MERCADO_PAGO',
-        status: 'PENDING',
-        checkoutUrl: 'https://mercadopago.example/checkout/27',
-      },
-      paymentInitialization: { status: 'READY' },
-    };
-
-    service.retryPayment(27).subscribe((result) => expect(result).toEqual(response));
-
-    const request = httpTesting.expectOne(`${environment.apiUrl}/pedidos/27/payment/retry`);
-    expect(request.request.method).toBe('POST');
-    expect(request.request.body).toEqual({});
-    request.flush(response);
-  });
 });

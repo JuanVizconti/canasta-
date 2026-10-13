@@ -1,5 +1,4 @@
 import { BadRequestException, HttpStatus, Injectable, NotFoundException, OnModuleDestroy } from '@nestjs/common';
-import { randomUUID } from 'crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
 import {
   DeliveryMethod as PrismaDeliveryMethod,
@@ -10,15 +9,11 @@ import {
   PrismaClient,
 } from '@prisma/client';
 import { CartService } from '../cart/cart.service';
-import { MercadoPagoService } from '../mercado-pago/mercado-pago.service';
-import { MercadoPagoOrderDetails } from '../mercado-pago/mercado-pago.types';
 import { CreatePedidoDto } from './dto/create-pedido.dto';
 import { DeliveryMethod } from './interfaces/delivery-method.enum';
 import { QuotePedidoDto } from './dto/quote-pedido.dto';
 import { PedidoErrorCode } from './interfaces/pedido-error-code.enum';
 import { PedidoMapper, pedidoDetailInclude } from './pedido.mapper';
-import { mapMercadoPagoOrderStatus } from './mercado-pago-order-status.mapper';
-import { MercadoPagoOrderProcessService } from './mercado-pago-order-process.service';
 
 @Injectable()
 export class PedidoService implements OnModuleDestroy {
@@ -26,14 +21,8 @@ export class PedidoService implements OnModuleDestroy {
   private static readonly minimumPurchase = new Prisma.Decimal(10000);
   private static readonly serviceFee = new Prisma.Decimal(500);
   private static readonly deliveryPercentage = new Prisma.Decimal('0.10');
-  private static readonly paymentExpirationMinutes = 30;
-  private static readonly mercadoPagoExpirationTime = 'PT30M';
 
-  constructor(
-    private readonly cartService: CartService,
-    private readonly mercadoPagoService: MercadoPagoService,
-    private readonly mercadoPagoOrderProcessService: MercadoPagoOrderProcessService,
-  ) {
+  constructor(private readonly cartService: CartService) {
     const connectionString = process.env.DATABASE_URL;
 
     if (!connectionString) {
@@ -46,13 +35,11 @@ export class PedidoService implements OnModuleDestroy {
   }
 
   async create(userId: number, createPedidoDto: CreatePedidoDto) {
-    switch (createPedidoDto.paymentMethod){
-      case PaymentMethod.CASH:
-        return this.createCashPedido(userId, createPedidoDto);
-
-      case PaymentMethod.MERCADO_PAGO:
-        return this.createMercadoPagoPedido(userId, createPedidoDto);
+    if (createPedidoDto.paymentMethod !== PaymentMethod.CASH) {
+      throw new BadRequestException('POST /pedidos only supports CASH payments');
     }
+
+    return this.createCashPedido(userId, createPedidoDto);
   }
 
   async findOneForUser(userId: number, pedidoId: number) {
@@ -153,222 +140,6 @@ export class PedidoService implements OnModuleDestroy {
 
       return this.mapCreatedPedido(pedido);
     });
-  }
-
-  private async createMercadoPagoPedido(
-    userId: number, createPedidoDto: CreatePedidoDto,
-  ) {
-    const idempotencyKey = randomUUID();
-    
-    const expiresAt = new Date(
-      Date.now() + PedidoService.paymentExpirationMinutes * 60 * 1000,
-    );
-    
-    const pedido = await this.prisma.$transaction(async (transaction) => {
-    
-    const cart = await this.getCartForCheckout(transaction, userId);
-    
-    const subtotal = this.calculateSubtotal(cart?.items ?? []);
-    
-    const pricing = this.calculatePricing(subtotal, createPedidoDto.delivery.method);
-
-    const pendingPedido = await transaction.pedido.create({
-      data: {
-        userId,
-        ...createPedidoDto.personalInfo,
-        
-        deliveryMethod: this.toPrismaDeliveryMethod(createPedidoDto.delivery.method),
-        ...this.getDeliveryAddress(createPedidoDto.delivery),
-        
-        subtotal: pricing.subtotal,
-        serviceFee: pricing.serviceFee,
-        deliveryFee: pricing.deliveryFee,
-        total: pricing.total,
-        
-        estado: PedidoEstado.PENDING,
-        
-        expiresAt,
-        
-        items: {
-          create: this.biuldPedidoItems(cart?.items ?? []),
-        },
-        
-        payment: {
-          create: {
-            method: PaymentMethod.MERCADO_PAGO,
-            status: PaymentStatus.PENDING,
-            providerOrderId: null,
-            idempotencyKey,
-            checkoutUrl: null,
-          },
-        },
-      },
-      
-      select: {
-        id: true,
-        estado: true,
-        total: true,
-        user: { select: { email: true } },       
-        payment: {
-          select: {
-            method: true,
-            status: true,
-            idempotencyKey: true,
-          },
-        },
-      },
-    });
-
-    await this.decrementStock(transaction, cart?.items ?? []);
-
-    await this.clearCart(transaction, cart);
-
-    return pendingPedido;
-  });
-
-  const payment = pedido.payment;
-  if (!payment?.idempotencyKey) {
-    throw new Error('Mercado Pago payment was created without an idempotency key');
-  }
-
-  try {
-    const order = await this.mercadoPagoService.createOrder({
-      externalReference: String(pedido.id),
-      idempotencyKey: payment.idempotencyKey,
-      total: pedido.total.toFixed(2),
-      expirationTime: PedidoService.mercadoPagoExpirationTime,
-      payerEmail: pedido.user.email,      
-    });
-
-    await this.prisma.payment.update({
-      where: { pedidoId: pedido.id },
-      data: {
-        providerOrderId: order.providerOrderId,
-        checkoutUrl: order.checkoutUrl,
-      },
-    });
-
-    return {
-      id: pedido.id,
-      estado: pedido.estado,
-      total: pedido.total.toFixed(2),
-      payment: {
-        method: payment.method,
-        status: payment.status,
-        checkoutUrl: order.checkoutUrl,
-      },
-      paymentInitialization: { status: 'READY' as const },
-    };
-  } catch {
-    return {
-      id: pedido.id,
-      estado: pedido.estado,
-      total: pedido.total.toFixed(2),
-      payment: {
-        method: payment.method,
-        status: payment.status,
-        checkoutUrl: null,
-      },
-      paymentInitialization: { status: 'FAILED' as const },
-    };
-  }
-}
-
-  async retryMercadoPagoPayment(userId: number, pedidoId: number) {
-    const pedido = await this.prisma.pedido.findFirst({
-      where: { id: pedidoId, userId },
-      select: {
-        id: true,
-        estado: true,
-        total: true,
-        createdAt: true,
-        expiresAt: true,
-        user: { select: { email: true } },
-        payment: {
-          select: {
-            method: true,
-            status: true,
-            idempotencyKey: true,
-            providerOrderId: true,
-            checkoutUrl: true,
-          },
-        },
-      },
-    });
-
-    if (!pedido) {
-      throw new NotFoundException({
-        statusCode: HttpStatus.NOT_FOUND,
-        code: PedidoErrorCode.PEDIDO_NOT_FOUND,
-        message: 'Pedido no encontrado.',
-      });
-    }
-
-    const payment = pedido.payment;
-    if (
-      pedido.estado !== PedidoEstado.PENDING ||
-      !payment ||
-      payment.method !== PaymentMethod.MERCADO_PAGO ||
-      payment.status !== PaymentStatus.PENDING ||
-      !payment.idempotencyKey ||
-      !pedido.expiresAt
-    ) {
-      throw this.paymentRetryNotAllowed();
-    }
-
-    if (pedido.expiresAt.getTime() <= Date.now()) {
-      throw new BadRequestException({
-        statusCode: HttpStatus.BAD_REQUEST,
-        code: PedidoErrorCode.PAYMENT_EXPIRED,
-        message: 'El pedido ya expiró y no puede reintentar el pago.',
-      });
-    }
-
-    if (payment.checkoutUrl) {
-      return this.mercadoPagoRetryResponse(pedido, payment.checkoutUrl, 'READY');
-    }
-  
-    const idempotencyKey = randomUUID();
-    await this.prisma.payment.update({
-      where: { pedidoId: pedido.id },
-      data: { idempotencyKey },
-    });
-
-    try {
-      const order = await this.mercadoPagoService.createOrder({
-        externalReference: String(pedido.id),
-        idempotencyKey,
-        total: pedido.total.toFixed(2),
-        expirationTime: this.remainingExpirationTime(pedido.expiresAt),
-        payerEmail: pedido.user.email,
-      });
-
-      await this.prisma.payment.update({
-        where: { pedidoId: pedido.id },
-        data: {
-          providerOrderId: order.providerOrderId,
-          checkoutUrl: order.checkoutUrl,
-        },
-      });
-
-      return this.mercadoPagoRetryResponse(pedido, order.checkoutUrl, 'READY');
-    } catch {
-      return this.mercadoPagoRetryResponse(pedido, null, 'FAILED');
-    }
-  }
-
-  async processMercadoPagoOrder(order: MercadoPagoOrderDetails): Promise<void> {
-    const action = mapMercadoPagoOrderStatus(order.status, order.statusDetail);
-    if (action === 'NO_ACTION' || action === 'PARTIALLY_REFUNDED') {
-      return;
-    }
-
-    const pedidoId = Number(order.externalReference);
-    if (!Number.isFinite(pedidoId) || !Number.isInteger(pedidoId) || pedidoId <= 0) {
-      throw new Error('Mercado Pago order external reference is invalid');
-    }
-
-    await this.mercadoPagoOrderProcessService.process(action, pedidoId, order);
   }
 
   async quote(userId: number, { deliveryMethod }: QuotePedidoDto) {
@@ -529,14 +300,6 @@ export class PedidoService implements OnModuleDestroy {
     });
   }
   
-  private remainingExpirationTime(expiresAt: Date): string {
-    const remainingSeconds = Math.ceil((expiresAt.getTime() - Date.now()) / 1000);
-    const minutes = Math.floor(remainingSeconds / 60);
-    const seconds = remainingSeconds % 60;
-    
-    return seconds === 0 ? `PT${minutes}M` : `PT${minutes}M${seconds}S`;
-  }
-  
   /*--------------------------------------Mapers-------------------------------------------*/
   
   private mapCreatedPedido(pedido:{
@@ -586,31 +349,4 @@ export class PedidoService implements OnModuleDestroy {
     };
   }
   
-  private mercadoPagoRetryResponse(
-    pedido: { id: number; estado: PedidoEstado; total: Prisma.Decimal; payment: { method: PaymentMethod; status: PaymentStatus } | null },
-    checkoutUrl: string | null,
-    paymentInitializationStatus: 'READY' | 'FAILED',
-  ) {
-    return {
-      id: pedido.id,
-      estado: pedido.estado,
-      total: pedido.total.toFixed(2),
-      payment: pedido.payment
-      ? {
-        method: pedido.payment.method,
-        status: pedido.payment.status,
-        checkoutUrl,
-      }
-      : null,
-      paymentInitialization: { status: paymentInitializationStatus },
-    };
-  }
-
-  private paymentRetryNotAllowed() {
-    return new BadRequestException({
-      statusCode: HttpStatus.BAD_REQUEST,
-      code: PedidoErrorCode.PAYMENT_RETRY_NOT_ALLOWED,
-      message: 'El pago del pedido no puede reintentarse.',
-    });
-  }
 }

@@ -6,6 +6,7 @@ import { CreatePedidoRequest, CreatedPedido } from '../../pedido/model/create-pe
 import { PedidoService } from '../../pedido/service/pedido.service';
 import { CartService } from '../../cart/service/cart.service';
 import { CheckoutService } from '../service/checkout.service';
+import { CheckoutPaymentService } from '../service/checkout-payment.service';
 
 interface QuoteErrorResponse {
   code?: string;
@@ -20,6 +21,7 @@ interface QuoteErrorResponse {
 export class ConfirmationComponent implements OnInit {
   private readonly checkoutService = inject(CheckoutService);
   private readonly pedidoService = inject(PedidoService);
+  private readonly checkoutPaymentService = inject(CheckoutPaymentService);
   private readonly cartService = inject(CartService);
   private readonly router = inject(Router);
 
@@ -60,25 +62,36 @@ export class ConfirmationComponent implements OnInit {
   }
 
   confirmCashOrder(): void {
-    this.confirmOrder('CASH');
-  }
-  
-  confirmMercadoPagoOrder(): void {
-    this.confirmOrder('MERCADO_PAGO');
-  }
-  
-  private confirmOrder(paymentMethod: 'CASH' | 'MERCADO_PAGO'): void {
-    const request = this.createPedidoRequest(paymentMethod);
-    
+    const request = this.createCashPedidoRequest();
+
     if (!request || this.isSubmitting()) {
+      return;
+    }
+
+    this.isSubmitting.set(true);
+    this.creationErrorMessage.set('');
+    this.pedidoService.create(request).subscribe({
+      next: (pedido) => this.handleCreatedCashPedido(pedido),
+      error: (error: HttpErrorResponse) => {
+        this.isSubmitting.set(false);
+        this.creationErrorMessage.set(this.getCreationErrorMessage(error));
+      },
+    });
+  }
+
+  confirmMercadoPagoOrder(): void {
+    const checkout = this.createMercadoPagoCheckoutRequest();
+    
+    if (!checkout || this.isSubmitting()) {
       return;
     }
     
     this.isSubmitting.set(true);
     this.creationErrorMessage.set('');
-    this.pedidoService.create(request).subscribe({
-      next: (pedido) => {
-        this.handleCreatedPedido(pedido, paymentMethod);
+    this.checkoutPaymentService.initializeMercadoPago(checkout).subscribe({
+      next: ({ checkoutUrl }) => {
+        this.isSubmitting.set(false);
+        this.redirectToCheckout(checkoutUrl);
       },
       error: (error: HttpErrorResponse) => {
         this.isSubmitting.set(false);
@@ -86,14 +99,12 @@ export class ConfirmationComponent implements OnInit {
       },
     });
   }
-  
-  private createPedidoRequest(
-    paymentMethod: 'CASH' | 'MERCADO_PAGO',
-  ): CreatePedidoRequest | null {
+
+  private createCashPedidoRequest(): CreatePedidoRequest | null {
     const checkoutData = this.checkoutData();
     
     if (
-      checkoutData.payment?.method !== paymentMethod ||
+      checkoutData.payment?.method !== 'CASH' ||
       !checkoutData.delivery
     ) {
       return null;
@@ -107,31 +118,32 @@ export class ConfirmationComponent implements OnInit {
         method: 'DELIVERY',
         address: { ...checkoutData.delivery.address },
       },
-      paymentMethod,
+      paymentMethod: 'CASH',
     };
   }
-  
-  private handleCreatedPedido(
-    pedido: CreatedPedido,
-    paymentMethod: 'CASH' | 'MERCADO_PAGO',
-  ): void {
-    if (
-      paymentMethod === 'MERCADO_PAGO' &&
-      pedido.paymentInitialization?.status === 'READY' &&
-      pedido.payment.checkoutUrl
-    ) {
-      this.refreshCart(() => {
-        this.isSubmitting.set(false);
-        this.redirectToCheckout(pedido.payment.checkoutUrl!);
-      });
-      return;
+
+  private createMercadoPagoCheckoutRequest(): {
+    personalInfo: CreatePedidoRequest['personalInfo'];
+    delivery: CreatePedidoRequest['delivery'];
+  } | null {
+    const checkoutData = this.checkoutData();
+
+    if (checkoutData.payment?.method !== 'MERCADO_PAGO' || !checkoutData.delivery) {
+      return null;
     }
-    
-    if (paymentMethod === 'MERCADO_PAGO') {
-      this.refreshCart(() => this.navigateToPedido(pedido.id, { paymentLinkError: true }));
-      return;
-    }
-    
+
+    return {
+      personalInfo: { ...checkoutData.personalInfo },
+      delivery: checkoutData.delivery.method === 'PICKUP'
+        ? { method: 'PICKUP' }
+        : {
+          method: 'DELIVERY',
+          address: { ...checkoutData.delivery.address },
+        },
+    };
+  }
+
+  private handleCreatedCashPedido(pedido: CreatedPedido): void {
     this.refreshCart(() => this.navigateToPedido(pedido.id));
   }
   

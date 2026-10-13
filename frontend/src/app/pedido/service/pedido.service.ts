@@ -5,7 +5,7 @@ import { environment } from '../../../enviroments/enviroment';
 import { DeliveryMethod } from '../../checkout/model/checkout.interface';
 import { CreatedPedido, CreatePedidoRequest } from '../model/create-pedido.interface';
 import { PedidoQuote } from '../model/pedido-quote.interface';
-import { Pedido, PedidoSummary, RetryPaymentResponse } from '../model/pedido.interface';
+import { Pedido, PedidoSummary } from '../model/pedido.interface';
 
 @Injectable({ providedIn: 'root' })
 export class PedidoService {
@@ -30,10 +30,4 @@ export class PedidoService {
     return this.http.get<PedidoSummary[]>(this.pedidosUrl);
   }
 
-  retryPayment(id: number): Observable<RetryPaymentResponse> {
-    return this.http.post<RetryPaymentResponse>(
-      `${this.pedidosUrl}/${id}/payment/retry`,
-      {},
-    );
-  }
 }

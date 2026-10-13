@@ -3,12 +3,17 @@ import { AuthModule } from '../auth/auth.module';
 import { MercadoPagoClientModule } from '../mercado-pago/mercado-pago-client.module';
 import { CheckoutController } from './checkout.controller';
 import { CheckoutPaymentService } from './checkout-payment.service';
+import { CheckoutSnapshotProcessService } from './checkout-snapshot-process.service';
 import { CheckoutSnapshotService } from './checkout-snapshot.service';
 
 @Module({
   imports: [AuthModule, MercadoPagoClientModule],
   controllers: [CheckoutController],
-  providers: [CheckoutSnapshotService, CheckoutPaymentService],
-  exports: [CheckoutSnapshotService],
+  providers: [
+    CheckoutSnapshotService,
+    CheckoutSnapshotProcessService,
+    CheckoutPaymentService,
+  ],
+  exports: [CheckoutSnapshotService, CheckoutSnapshotProcessService],
 })
 export class CheckoutSnapshotModule {}
