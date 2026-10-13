@@ -222,7 +222,7 @@ describe('PedidoService', () => {
       where: { id: 12 }, data: { price: new Prisma.Decimal(0) },
     });
     expect(mercadoPagoService.createOrder).toHaveBeenCalledWith({
-      pedidoId: 42,
+      externalReference: '42',
       idempotencyKey: 'key-42',
       total: '44500.00',
       expirationTime: 'PT30M',
@@ -514,7 +514,7 @@ describe('PedidoService', () => {
     expect(newIdempotencyKey).toEqual(expect.any(String));
     expect(newIdempotencyKey).not.toBe('persisted-idempotency-key');
     expect(mercadoPagoService.createOrder).toHaveBeenCalledWith({
-      pedidoId: 42,
+      externalReference: '42',
       idempotencyKey: newIdempotencyKey,
       total: '44500.00',
       expirationTime: 'PT20M',

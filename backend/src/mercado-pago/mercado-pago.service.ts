@@ -48,22 +48,12 @@ export class MercadoPagoService {
     input: CreateMercadoPagoOrderInput,
   ): Promise<MercadoPagoOrderResult> {
     const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
-    const frontendUrl = process.env.FRONTEND_URL;
 
     if (!accessToken) {
       throw new Error('MERCADO_PAGO_ACCESS_TOKEN is required');
     }
 
-    if (!frontendUrl) {
-      throw new Error('FRONTEND_URL is required');
-    }
-
-    const normalizedFrontendUrl = frontendUrl.replace(/\/+$/, '');
-    if (!normalizedFrontendUrl) {
-      throw new Error('FRONTEND_URL is required');
-    }
-
-    const returnUrl = `${normalizedFrontendUrl}/pedidos/${input.pedidoId}`;
+    const returnUrl = input.returnUrl ?? this.getPedidoReturnUrl(input.externalReference);
 
     const response = await fetch(MERCADO_PAGO_ORDERS_URL, {
       method: 'POST',
@@ -76,7 +66,7 @@ export class MercadoPagoService {
       body: JSON.stringify({
         type: 'online',
         processing_mode: 'manual',
-        external_reference: String(input.pedidoId),
+        external_reference: input.externalReference,
         total_amount: input.total,
         expiration_time: input.expirationTime,
         payer: { email: input.payerEmail },
@@ -184,6 +174,21 @@ export class MercadoPagoService {
       typeof response['id'] === 'string' &&
       typeof response['checkout_url'] === 'string'
     );
+  }
+
+  private getPedidoReturnUrl(externalReference: string): string {
+    const frontendUrl = process.env.FRONTEND_URL;
+
+    if (!frontendUrl) {
+      throw new Error('FRONTEND_URL is required');
+    }
+
+    const normalizedFrontendUrl = frontendUrl.replace(/\/+$/, '');
+    if (!normalizedFrontendUrl) {
+      throw new Error('FRONTEND_URL is required');
+    }
+
+    return `${normalizedFrontendUrl}/pedidos/${externalReference}`;
   }
 
   private isOrderDetailsResponse(value: unknown): value is {

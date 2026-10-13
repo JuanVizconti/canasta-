@@ -1,9 +1,10 @@
 export interface CreateMercadoPagoOrderInput {
-  pedidoId: number;
+  externalReference: string;
   idempotencyKey: string;
   total: string;
   expirationTime: string;
   payerEmail: string;
+  returnUrl?: string;
 }
 
 export interface MercadoPagoOrderResult {

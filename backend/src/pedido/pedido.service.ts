@@ -233,7 +233,7 @@ export class PedidoService implements OnModuleDestroy {
 
   try {
     const order = await this.mercadoPagoService.createOrder({
-      pedidoId: pedido.id,
+      externalReference: String(pedido.id),
       idempotencyKey: payment.idempotencyKey,
       total: pedido.total.toFixed(2),
       expirationTime: PedidoService.mercadoPagoExpirationTime,
@@ -336,7 +336,7 @@ export class PedidoService implements OnModuleDestroy {
 
     try {
       const order = await this.mercadoPagoService.createOrder({
-        pedidoId: pedido.id,
+        externalReference: String(pedido.id),
         idempotencyKey,
         total: pedido.total.toFixed(2),
         expirationTime: this.remainingExpirationTime(pedido.expiresAt),

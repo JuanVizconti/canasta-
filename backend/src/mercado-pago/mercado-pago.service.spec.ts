@@ -3,7 +3,7 @@ import { MercadoPagoService } from './mercado-pago.service';
 
 describe('MercadoPagoService', () => {
   const input = {
-    pedidoId: 42,
+    externalReference: '42',
     idempotencyKey: 'idem-42',
     total: '44500.00',
     expirationTime: 'PT30M',
@@ -91,6 +91,38 @@ describe('MercadoPagoService', () => {
       pending_url: 'https://frontend.example/pedidos/42',
       auto_return: 'all',
     });
+  });
+
+  it('uses the supplied snapshot external reference, expiration, and return URL', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: jest.fn().mockResolvedValue({
+        id: 'mp-order-20',
+        checkout_url: 'https://mercadopago.example/checkout/20',
+      }),
+    });
+    global.fetch = fetchMock;
+    const service = new MercadoPagoService();
+
+    await service.createOrder({
+      ...input,
+      externalReference: '20',
+      expirationTime: 'PT30M',
+      returnUrl: 'https://frontend.example/checkout/success?snapshotId=20',
+    });
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(expect.objectContaining({
+      external_reference: '20',
+      expiration_time: 'PT30M',
+      config: {
+        online: expect.objectContaining({
+          success_url: 'https://frontend.example/checkout/success?snapshotId=20',
+          failure_url: 'https://frontend.example/checkout/success?snapshotId=20',
+          pending_url: 'https://frontend.example/checkout/success?snapshotId=20',
+        }),
+      },
+    }));
   });
 
   it('rejects provider HTTP failures without exposing the access token', async () => {
