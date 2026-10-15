@@ -7,6 +7,8 @@ import { AuthService } from './auth/service/auth.service';
 import { AccountComponent } from './account/account.component';
 import { CartService } from './cart/service/cart.service';
 import { CheckoutComponent } from './checkout/checkout.component';
+import { CheckoutSuccessComponent } from './checkout/success/checkout-success.component';
+import { CheckoutPaymentService } from './checkout/service/checkout-payment.service';
 import { CheckoutService } from './checkout/service/checkout.service';
 import { PedidoComponent } from './pedido/pedido.component';
 import { PedidoService } from './pedido/service/pedido.service';
@@ -50,6 +52,12 @@ describe('app routes', () => {
               cart: null,
               payment: null,
             }).asReadonly(),
+          },
+        },
+        {
+          provide: CheckoutPaymentService,
+          useValue: {
+            getSnapshotStatus: () => of({ status: 'ACTIVE', pedidoId: null }),
           },
         },
         {
@@ -99,6 +107,14 @@ describe('app routes', () => {
     await harness.navigateByUrl('/checkout', CheckoutComponent);
 
     expect(harness.routeNativeElement?.textContent).toContain('Revisá tu carrito');
+  });
+
+  it('loads CheckoutSuccessComponent at /checkout/success', async () => {
+    const harness = await RouterTestingHarness.create();
+
+    await harness.navigateByUrl('/checkout/success?snapshotId=15', CheckoutSuccessComponent);
+
+    expect(harness.routeNativeElement?.textContent).toContain('Estamos procesando tu pago');
   });
 
   it('loads AccountComponent at /account', async () => {

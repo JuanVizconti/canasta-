@@ -6,6 +6,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { MercadoPagoOrderDetails } from '../mercado-pago/mercado-pago.types';
+import { PedidoService } from '../pedido/pedido.service';
 import { CheckoutSnapshotProcessService } from './checkout-snapshot-process.service';
 
 describe('CheckoutSnapshotProcessService', () => {
@@ -64,11 +65,17 @@ describe('CheckoutSnapshotProcessService', () => {
   });
 
   const createService = (snapshot = activeSnapshot()) => {
-    const service = new CheckoutSnapshotProcessService();
+    const pedidoService = {
+      processMercadoPagoRefund: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PedidoService;
+    const service = new CheckoutSnapshotProcessService(pedidoService);
     const itemCount = snapshot && 'items' in snapshot ? snapshot.items.length : 0;
     const transaction = {
       checkoutSnapshot: {
         findUnique: jest.fn().mockResolvedValue(snapshot),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      product: {
         update: jest.fn().mockResolvedValue({}),
       },
       pedido: {
@@ -91,7 +98,7 @@ describe('CheckoutSnapshotProcessService', () => {
     };
     (service as unknown as { prisma: typeof prisma }).prisma = prisma;
 
-    return { service, prisma, transaction };
+    return { service, prisma, transaction, pedidoService };
   };
 
   beforeEach(() => {
@@ -165,7 +172,7 @@ describe('CheckoutSnapshotProcessService', () => {
         pedidoId: 91,
       },
     });
-    expect(transaction).not.toHaveProperty('product');
+    expect(transaction.product.update).not.toHaveBeenCalled();
     expect(transaction).not.toHaveProperty('cart');
     expect(transaction).not.toHaveProperty('cartItem');
   });
@@ -272,5 +279,214 @@ describe('CheckoutSnapshotProcessService', () => {
     (transaction[section][method] as jest.Mock).mockRejectedValueOnce(failure);
 
     await expect(service.processApprovedOrder(approvedOrder())).rejects.toThrow(failure);
+  });
+
+  it('expires an ACTIVE snapshot and restores every reserved product stock atomically', async () => {
+    const { service, prisma, transaction } = createService();
+
+    await expect(service.processCancelledOrder(approvedOrder({
+      status: 'canceled',
+      statusDetail: 'canceled',
+    }))).resolves.toBeUndefined();
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(transaction.product.update).toHaveBeenCalledWith({
+      where: { id: 4 },
+      data: { stock: { increment: 2 } },
+    });
+    expect(transaction.product.update).toHaveBeenCalledWith({
+      where: { id: 8 },
+      data: { stock: { increment: 1 } },
+    });
+    expect(transaction.checkoutSnapshot.update).toHaveBeenCalledWith({
+      where: { id: 20 },
+      data: { status: CheckoutSnapshotStatus.EXPIRED },
+    });
+    expect(transaction.pedido.create).not.toHaveBeenCalled();
+    expect(transaction.pedidoItem.createMany).not.toHaveBeenCalled();
+    expect(transaction.payment.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    CheckoutSnapshotStatus.EXPIRED,
+    CheckoutSnapshotStatus.FAILED,
+    CheckoutSnapshotStatus.COMPLETED,
+  ])('does not restore stock or mutate a %s snapshot after a cancelled webhook', async (status) => {
+    const snapshot = activeSnapshot({
+      status,
+      pedidoId: status === CheckoutSnapshotStatus.COMPLETED ? 91 : null,
+    });
+    const { service, prisma, transaction } = createService(snapshot);
+
+    await expect(service.processCancelledOrder(approvedOrder({
+      status: 'canceled',
+      statusDetail: 'canceled',
+    }))).resolves.toBeUndefined();
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(transaction.product.update).not.toHaveBeenCalled();
+    expect(transaction.checkoutSnapshot.update).not.toHaveBeenCalled();
+    expect(transaction.pedido.create).not.toHaveBeenCalled();
+    expect(transaction.payment.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a cancelled webhook from a different provider order without mutation', async () => {
+    const { service, prisma } = createService(activeSnapshot({
+      providerOrderId: 'mp-order-other',
+    }));
+
+    await expect(service.processCancelledOrder(approvedOrder({
+      providerOrderId: 'mp-order-20',
+      status: 'canceled',
+      statusDetail: 'canceled',
+    }))).rejects.toThrow('Mercado Pago order does not match checkout snapshot');
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it.each(['', 'abc', '12abc', '0', '-1'])(
+    'rejects invalid cancelled-order external references without mutation: %s',
+    async (externalReference) => {
+      const { service, prisma } = createService();
+
+      await expect(service.processCancelledOrder(approvedOrder({
+        externalReference,
+        status: 'canceled',
+        statusDetail: 'canceled',
+      }))).rejects.toThrow('Mercado Pago order external reference is invalid');
+
+      expect(prisma.checkoutSnapshot.findUnique).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects a cancelled webhook for an unknown snapshot without mutation', async () => {
+    const { service, prisma } = createService(null as never);
+
+    await expect(service.processCancelledOrder(approvedOrder({
+      status: 'canceled',
+      statusDetail: 'canceled',
+    }))).rejects.toThrow('Checkout snapshot not found');
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('does not mark the snapshot expired when stock restoration fails', async () => {
+    const { service, transaction } = createService();
+    const failure = new Error('stock update failed');
+    transaction.product.update.mockRejectedValueOnce(failure);
+
+    await expect(service.processCancelledOrder(approvedOrder({
+      status: 'canceled',
+      statusDetail: 'canceled',
+    }))).rejects.toThrow(failure);
+
+    expect(transaction.checkoutSnapshot.update).not.toHaveBeenCalled();
+  });
+
+  it('propagates snapshot-expiration failures so the transaction rolls back stock restoration', async () => {
+    const { service, transaction } = createService();
+    const failure = new Error('snapshot update failed');
+    transaction.checkoutSnapshot.update.mockRejectedValueOnce(failure);
+
+    await expect(service.processCancelledOrder(approvedOrder({
+      status: 'canceled',
+      statusDetail: 'canceled',
+    }))).rejects.toThrow(failure);
+
+    expect(transaction.product.update).toHaveBeenCalledTimes(2);
+  });
+
+  it('delegates a completed snapshot refund to the pedido domain without mutating the snapshot', async () => {
+    const completedSnapshot = activeSnapshot({
+      status: CheckoutSnapshotStatus.COMPLETED,
+      pedidoId: 91,
+    });
+    const { service, prisma, pedidoService } = createService(completedSnapshot);
+    const order = approvedOrder({
+      providerOrderId: 'mp-order-20',
+      status: 'refunded',
+      statusDetail: 'refunded',
+    });
+
+    await expect(service.processRefundedOrder(order)).resolves.toBeUndefined();
+
+    expect(pedidoService.processMercadoPagoRefund).toHaveBeenCalledWith(
+      91,
+      'mp-order-20',
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it.each(['', 'abc', '15abc', '0', '-1'])(
+    'rejects invalid refunded-order external references without delegating: %s',
+    async (externalReference) => {
+      const { service, prisma, pedidoService } = createService();
+
+      await expect(service.processRefundedOrder(approvedOrder({
+        externalReference,
+        status: 'refunded',
+        statusDetail: 'refunded',
+      }))).rejects.toThrow('Mercado Pago order external reference is invalid');
+
+      expect(prisma.checkoutSnapshot.findUnique).not.toHaveBeenCalled();
+      expect(pedidoService.processMercadoPagoRefund).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects an unknown snapshot refund without delegating', async () => {
+    const { service, pedidoService } = createService(null as never);
+
+    await expect(service.processRefundedOrder(approvedOrder({
+      status: 'refunded',
+      statusDetail: 'refunded',
+    }))).rejects.toThrow('Checkout snapshot not found');
+
+    expect(pedidoService.processMercadoPagoRefund).not.toHaveBeenCalled();
+  });
+
+  it('rejects a refund from a different provider order without delegating', async () => {
+    const completedSnapshot = activeSnapshot({
+      status: CheckoutSnapshotStatus.COMPLETED,
+      pedidoId: 91,
+      providerOrderId: 'mp-order-other',
+    });
+    const { service, pedidoService } = createService(completedSnapshot);
+
+    await expect(service.processRefundedOrder(approvedOrder({
+      status: 'refunded',
+      statusDetail: 'refunded',
+    }))).rejects.toThrow('Mercado Pago order does not match checkout snapshot');
+
+    expect(pedidoService.processMercadoPagoRefund).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    CheckoutSnapshotStatus.ACTIVE,
+    CheckoutSnapshotStatus.EXPIRED,
+    CheckoutSnapshotStatus.FAILED,
+  ])('rejects a refund for a %s snapshot without delegating', async (status) => {
+    const { service, pedidoService } = createService(activeSnapshot({ status }));
+
+    await expect(service.processRefundedOrder(approvedOrder({
+      status: 'refunded',
+      statusDetail: 'refunded',
+    }))).rejects.toThrow('Checkout snapshot is not completed');
+
+    expect(pedidoService.processMercadoPagoRefund).not.toHaveBeenCalled();
+  });
+
+  it('rejects a completed snapshot without pedidoId without delegating', async () => {
+    const { service, pedidoService } = createService(activeSnapshot({
+      status: CheckoutSnapshotStatus.COMPLETED,
+      pedidoId: null,
+    }));
+
+    await expect(service.processRefundedOrder(approvedOrder({
+      status: 'refunded',
+      statusDetail: 'refunded',
+    }))).rejects.toThrow('Checkout snapshot is in an inconsistent state');
+
+    expect(pedidoService.processMercadoPagoRefund).not.toHaveBeenCalled();
   });
 });

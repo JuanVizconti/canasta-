@@ -13,6 +13,17 @@ export interface InitializeMercadoPagoCheckoutResponse {
   checkoutUrl: string;
 }
 
+export type CheckoutSnapshotStatus =
+  | 'ACTIVE'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'EXPIRED';
+
+export interface CheckoutSnapshotStatusResponse {
+  status: CheckoutSnapshotStatus;
+  pedidoId: number | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class CheckoutPaymentService {
   private readonly checkoutUrl = `${environment.apiUrl}/checkout/mercado-pago`;
@@ -25,6 +36,14 @@ export class CheckoutPaymentService {
     return this.http.post<InitializeMercadoPagoCheckoutResponse>(
       this.checkoutUrl,
       checkout,
+    );
+  }
+
+  getSnapshotStatus(
+    snapshotId: number,
+  ): Observable<CheckoutSnapshotStatusResponse> {
+    return this.http.get<CheckoutSnapshotStatusResponse>(
+      `${environment.apiUrl}/checkout-snapshots/${snapshotId}/status`,
     );
   }
 }

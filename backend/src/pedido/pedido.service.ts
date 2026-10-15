@@ -15,6 +15,33 @@ import { QuotePedidoDto } from './dto/quote-pedido.dto';
 import { PedidoErrorCode } from './interfaces/pedido-error-code.enum';
 import { PedidoMapper, pedidoDetailInclude } from './pedido.mapper';
 
+const pedidoForMercadoPagoRefundSelect = {
+  id: true,
+  estado: true,
+  payment: {
+    select: {
+      id: true,
+      method: true,
+      status: true,
+      providerOrderId: true,
+    },
+  },
+  items: {
+    select: {
+      productId: true,
+      cantidad: true,
+    },
+  },
+} satisfies Prisma.PedidoSelect;
+
+type PedidoForMercadoPagoRefund = Prisma.PedidoGetPayload<{
+  select: typeof pedidoForMercadoPagoRefundSelect;
+}>;
+
+type PedidoWithMercadoPagoPayment = PedidoForMercadoPagoRefund & {
+  payment: NonNullable<PedidoForMercadoPagoRefund['payment']>;
+};
+
 @Injectable()
 export class PedidoService implements OnModuleDestroy {
   private readonly prisma: PrismaClient;
@@ -42,52 +69,73 @@ export class PedidoService implements OnModuleDestroy {
     return this.createCashPedido(userId, createPedidoDto);
   }
 
-  async findOneForUser(userId: number, pedidoId: number) {
-    const pedido = await this.prisma.pedido.findFirst({
-      where: {
-        id: pedidoId,
-        userId,
-      },
-      include: pedidoDetailInclude,
-    });
-
-    if (!pedido) {
-      throw new NotFoundException({
-        statusCode: HttpStatus.NOT_FOUND,
-        code: PedidoErrorCode.PEDIDO_NOT_FOUND,
-        message: 'Pedido no encontrado.',
+  async processMercadoPagoRefund(
+    pedidoId: number,
+    providerOrderId: string,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (transaction) => {
+      const pedido = await this.findPedidoForMercadoPagoRefund(
+        transaction,
+        pedidoId,
+      );
+      
+      this.ensureMercadoPagoRefundPayment(pedido, providerOrderId);
+      if (this.isAlreadyRefunded(pedido)) {
+        return;
+      }
+      
+      this.ensureRefundCanBeProcessed(pedido);
+      
+      const updatedPayment = await transaction.payment.updateMany({
+        where: {
+          id: pedido.payment.id,
+          status: PaymentStatus.APPROVED,
+        },
+        data: { status: PaymentStatus.REFUNDED },
       });
-    }
-
-    return PedidoMapper.toDetail(pedido);
-  }
-
-  async findAllByUser(userId: number) {
-    const pedidos = await this.prisma.pedido.findMany({
-      where: { userId },
-      select: {
-        id: true,
-        createdAt: true,
-        total: true,
-        estado: true,
-      },
-      orderBy: { createdAt: 'desc' },
+      
+      if (updatedPayment.count === 0) {
+        const currentPedido = await this.findPedidoForMercadoPagoRefund(
+          transaction,
+          pedidoId,
+        );
+        
+        this.ensureMercadoPagoRefundPayment(currentPedido, providerOrderId);
+        if (this.isAlreadyRefunded(currentPedido)) {
+          return;
+        }
+        
+        throw new BadRequestException(
+          'Mercado Pago refund references an incompatible pedido state',
+        );
+      }
+      
+      const updatedPedido = await transaction.pedido.updateMany({
+        where: {
+          id: pedido.id,
+          estado: PedidoEstado.CONFIRMED,
+        },
+        data: { estado: PedidoEstado.CANCELLED },
+      });
+      
+      if (updatedPedido.count !== 1) {
+        throw new BadRequestException(
+          'Mercado Pago refund references an incompatible pedido state',
+        );
+      }
+      
+      await this.restorePedidoStock(transaction, pedido.items);
     });
-
-    return pedidos.map((pedido) => ({
-      ...pedido,
-      total: pedido.total.toFixed(2),
-    }));
   }
-
+  
   private async createCashPedido(
     userId: number, createPedidoDto: CreatePedidoDto,
   ){
     return this.prisma.$transaction(async (transaction) => {
       const cart= await this.getCartForCheckout(transaction, userId);
-
+      
       const subTotal= this.calculateSubtotal(cart?.items ?? []);
-
+      
       const pricing= this.calculatePricing(subTotal, createPedidoDto.delivery.method);
       
       const pedido= await transaction.pedido.create({
@@ -111,7 +159,7 @@ export class PedidoService implements OnModuleDestroy {
           items:{
             create: this.biuldPedidoItems(cart?.items ?? []),
           },
-
+          
           payment: {
             create: {
               method: PaymentMethod.CASH,
@@ -133,19 +181,19 @@ export class PedidoService implements OnModuleDestroy {
           },
         },
       });
-
+      
       await this.decrementStock(transaction, cart?.items?? []);
-
+      
       await this.clearCart(transaction, cart);
-
+      
       return this.mapCreatedPedido(pedido);
     });
   }
-
+  
   async quote(userId: number, { deliveryMethod }: QuotePedidoDto) {
     const subtotal = await this.cartService.getSubtotalForUser(userId);
     const pricing = this.calculatePricing(subtotal, deliveryMethod);
-
+    
     return {
       subtotal: pricing.subtotal.toFixed(2),
       serviceFee: pricing.serviceFee.toFixed(2),
@@ -153,7 +201,55 @@ export class PedidoService implements OnModuleDestroy {
       total: pricing.total.toFixed(2),
     };
   }
-
+  
+  async findOneForUser(userId: number, pedidoId: number) {
+    const pedido = await this.prisma.pedido.findFirst({
+      where: {
+        id: pedidoId,
+        userId,
+      },
+      include: pedidoDetailInclude,
+    });
+    
+    if (!pedido) {
+      throw new NotFoundException({
+        statusCode: HttpStatus.NOT_FOUND,
+        code: PedidoErrorCode.PEDIDO_NOT_FOUND,
+        message: 'Pedido no encontrado.',
+      });
+    }
+    
+    return PedidoMapper.toDetail(pedido);
+  }
+  
+  async findAllByUser(userId: number) {
+    const pedidos = await this.prisma.pedido.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        createdAt: true,
+        total: true,
+        estado: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    
+    return pedidos.map((pedido) => ({
+      ...pedido,
+      total: pedido.total.toFixed(2),
+    }));
+  }
+  
+  private async findPedidoForMercadoPagoRefund(
+    client: Pick<PrismaClient, 'pedido'> | Prisma.TransactionClient,
+    pedidoId: number,
+  ): Promise<PedidoForMercadoPagoRefund | null> {
+    return client.pedido.findUnique({
+      where: { id: pedidoId },
+      select: pedidoForMercadoPagoRefundSelect,
+    });
+  }
+  
   async onModuleDestroy() {
     await this.prisma.$disconnect();
   }
@@ -206,8 +302,20 @@ export class PedidoService implements OnModuleDestroy {
     );
   }
   
-  /*--------------------------------Helpers create-------------------------------------------*/
+  /*--------------------------------Helpers-------------------------------------------*/
   
+  private async restorePedidoStock(
+    transaction: Prisma.TransactionClient,
+    items: PedidoForMercadoPagoRefund['items'],
+  ): Promise<void> {
+    for (const item of items) {
+      await transaction.product.update({
+        where: { id: item.productId },
+        data: { stock: { increment: item.cantidad } },
+      });
+    }
+  }
+
   private getCartForCheckout(transaction: Prisma.TransactionClient, userId: number){
     return transaction.cart.findUnique({
       where: {userId},
@@ -348,5 +456,47 @@ export class PedidoService implements OnModuleDestroy {
       especificaciones: null,
     };
   }
+
+  /*-----------------------------------------Validators------------------------------*/
   
+  private ensureMercadoPagoRefundPayment(
+    pedido: PedidoForMercadoPagoRefund | null,
+    providerOrderId: string,
+  ): asserts pedido is PedidoWithMercadoPagoPayment {
+    if (!pedido) {
+      throw new NotFoundException('Pedido not found');
+    }
+  
+    if (!pedido.payment) {
+      throw new BadRequestException('Pedido has no payment');
+    }
+  
+    if (pedido.payment.method !== PaymentMethod.MERCADO_PAGO) {
+      throw new BadRequestException('Pedido payment is not Mercado Pago');
+    }
+  
+    if (pedido.payment.providerOrderId !== providerOrderId) {
+      throw new BadRequestException('Mercado Pago order does not match pedido payment');
+    }
+  }
+  
+  private ensureRefundCanBeProcessed(
+    pedido: PedidoForMercadoPagoRefund,
+  ): void {
+    if (
+      pedido.estado !== PedidoEstado.CONFIRMED ||
+      pedido.payment?.status !== PaymentStatus.APPROVED
+    ) {
+      throw new BadRequestException(
+        'Mercado Pago refund references an incompatible pedido state',
+      );
+    }
+  }
+  
+  private isAlreadyRefunded(pedido: PedidoForMercadoPagoRefund): boolean {
+    return (
+      pedido.estado === PedidoEstado.CANCELLED &&
+      pedido.payment?.status === PaymentStatus.REFUNDED
+    );
+  }
 }

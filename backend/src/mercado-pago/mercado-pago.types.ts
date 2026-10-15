@@ -3,8 +3,7 @@ export interface CreateMercadoPagoOrderInput {
   idempotencyKey: string;
   total: string;
   expirationTime: string;
-  payerEmail: string;
-  returnUrl?: string;
+  returnUrl: string;
 }
 
 export interface MercadoPagoOrderResult {

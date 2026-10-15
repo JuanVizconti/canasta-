@@ -1,4 +1,8 @@
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { CheckoutSnapshotStatus, Prisma } from '@prisma/client';
 import { CreateCheckoutSnapshotInput, CheckoutSnapshotService } from './checkout-snapshot.service';
 
@@ -244,6 +248,76 @@ describe('CheckoutSnapshotService', () => {
     expect(transaction.cart).not.toHaveProperty('update');
     expect(transaction).not.toHaveProperty('pedido');
     expect(transaction).not.toHaveProperty('payment');
+  });
+
+  it.each([
+    [CheckoutSnapshotStatus.ACTIVE, null],
+    [CheckoutSnapshotStatus.COMPLETED, 84],
+    [CheckoutSnapshotStatus.FAILED, null],
+    [CheckoutSnapshotStatus.EXPIRED, null],
+  ])('returns %s status only for the authenticated snapshot owner', async (status, pedidoId) => {
+    const service = new CheckoutSnapshotService();
+    const prisma = {
+      checkoutSnapshot: {
+        findFirst: jest.fn().mockResolvedValue({ status, pedidoId }),
+      },
+    };
+    (service as unknown as { prisma: typeof prisma }).prisma = prisma;
+
+    await expect(service.findStatusForUser(7, 20)).resolves.toEqual({
+      status,
+      pedidoId,
+    });
+    expect(prisma.checkoutSnapshot.findFirst).toHaveBeenCalledWith({
+      where: { id: 20, userId: 7 },
+      select: { status: true, pedidoId: true },
+    });
+    expect(prisma.checkoutSnapshot).not.toHaveProperty('update');
+    expect(prisma).not.toHaveProperty('$transaction');
+  });
+
+  it('rejects a snapshot id that is not a positive integer', async () => {
+    const service = new CheckoutSnapshotService();
+    const prisma = { checkoutSnapshot: { findFirst: jest.fn() } };
+    (service as unknown as { prisma: typeof prisma }).prisma = prisma;
+
+    await expect(service.findStatusForUser(7, 0)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.checkoutSnapshot.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('returns the same not-found result for a missing or foreign snapshot', async () => {
+    const service = new CheckoutSnapshotService();
+    const prisma = {
+      checkoutSnapshot: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
+    (service as unknown as { prisma: typeof prisma }).prisma = prisma;
+
+    await expect(service.findStatusForUser(7, 20)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(prisma.checkoutSnapshot.findFirst).toHaveBeenCalledWith({
+      where: { id: 20, userId: 7 },
+      select: { status: true, pedidoId: true },
+    });
+  });
+
+  it('rejects a completed snapshot without its persisted pedido', async () => {
+    const service = new CheckoutSnapshotService();
+    const prisma = {
+      checkoutSnapshot: {
+        findFirst: jest.fn().mockResolvedValue({
+          status: CheckoutSnapshotStatus.COMPLETED,
+          pedidoId: null,
+        }),
+      },
+    };
+    (service as unknown as { prisma: typeof prisma }).prisma = prisma;
+
+    await expect(service.findStatusForUser(7, 20)).rejects.toBeInstanceOf(
+      InternalServerErrorException,
+    );
   });
 
   it('marks an ACTIVE snapshot as FAILED and restores each reserved item stock', async () => {

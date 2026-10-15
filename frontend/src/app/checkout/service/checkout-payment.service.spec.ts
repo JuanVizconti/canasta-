@@ -36,4 +36,17 @@ describe('CheckoutPaymentService', () => {
     expect(request.request.body).not.toHaveProperty('paymentMethod');
     request.flush({ checkoutUrl: 'https://mercadopago.example/checkout/20' });
   });
+
+  it('gets the status of a checkout snapshot', () => {
+    service.getSnapshotStatus(20).subscribe((response) => {
+      expect(response).toEqual({ status: 'COMPLETED', pedidoId: 84 });
+    });
+
+    const request = httpTesting.expectOne(
+      `${environment.apiUrl}/checkout-snapshots/20/status`,
+    );
+    expect(request.request.method).toBe('GET');
+    expect(request.request.body).toBeNull();
+    request.flush({ status: 'COMPLETED', pedidoId: 84 });
+  });
 });

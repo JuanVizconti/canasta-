@@ -12,10 +12,7 @@ export class CheckoutPaymentService {
     private readonly mercadoPagoService: MercadoPagoService,
   ) {}
 
-  async initializeMercadoPago(
-    userId: number,
-    checkout: CreateCheckoutSnapshotInput,
-  ): Promise<{ checkoutUrl: string }> {
+  async initializeMercadoPago(userId: number,checkout: CreateCheckoutSnapshotInput,): Promise<{ checkoutUrl: string }> {
     const snapshot = await this.checkoutSnapshotService.create(userId, checkout);
 
     let order: Awaited<ReturnType<MercadoPagoService['createOrder']>>;
@@ -30,7 +27,6 @@ export class CheckoutPaymentService {
         idempotencyKey: snapshot.idempotencyKey,
         total: snapshot.total.toFixed(2),
         expirationTime: this.toExpirationTime(snapshot.expiresAt),
-        payerEmail: snapshot.user.email,
         returnUrl: this.getSuccessReturnUrl(snapshot.id),
       });
     } catch (error) {

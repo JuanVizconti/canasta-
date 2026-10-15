@@ -1,0 +1,24 @@
+<section class="checkout-card">
+  @if (hasInvalidSnapshotId()) {
+    <p>No pudimos identificar el pago.</p>
+  } @else if (isLoading()) {
+    <p>Consultando estado de tu pago...</p>
+  } @else if (hasRequestError()) {
+    <p>No pudimos consultar el estado del pago.</p>
+    <button type="button" (click)="refreshStatus()">Reintentar</button>
+  } @else if (status()?.status === 'ACTIVE') {
+    <h2>Estamos procesando tu pago</h2>
+    <p>La confirmación puede tardar unos instantes.</p>
+    <button type="button" (click)="refreshStatus()" [disabled]="isLoading()">
+      Actualizar estado
+    </button>
+  } @else if (status()?.status === 'COMPLETED') {
+    <h2>Pago confirmado</h2>
+    <p>Tu pedido fue creado correctamente.</p>
+    <button type="button" (click)="followPedido()">Seguir pedido</button>
+  } @else if (status()?.status === 'FAILED') {
+    <h2>No pudimos completar el pago.</h2>
+  } @else if (status()?.status === 'EXPIRED') {
+    <h2>Esta sesión de pago expiró.</h2>
+  }
+</section>

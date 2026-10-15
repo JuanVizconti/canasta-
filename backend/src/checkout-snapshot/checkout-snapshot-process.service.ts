@@ -9,6 +9,7 @@ import {
   PrismaClient,
 } from '@prisma/client';
 import { MercadoPagoOrderDetails } from '../mercado-pago/mercado-pago.types';
+import { PedidoService } from '../pedido/pedido.service';
 
 const snapshotForApprovalSelect = {
   id: true,
@@ -51,12 +52,16 @@ type CheckoutSnapshotForApproval = Prisma.CheckoutSnapshotGetPayload<{
 }>;
 
 type SnapshotClient = Pick<PrismaClient, 'checkoutSnapshot'>;
+type SnapshotTransactionClient = Pick<
+  Prisma.TransactionClient,
+  'checkoutSnapshot' | 'product'
+>;
 
 @Injectable()
 export class CheckoutSnapshotProcessService implements OnModuleDestroy {
   private readonly prisma: PrismaClient;
 
-  constructor() {
+  constructor(private readonly pedidoService: PedidoService) {
     const connectionString = process.env.DATABASE_URL;
 
     if (!connectionString) {
@@ -67,12 +72,13 @@ export class CheckoutSnapshotProcessService implements OnModuleDestroy {
       adapter: new PrismaPg({ connectionString }),
     });
   }
-
+  
   async processApprovedOrder(order: MercadoPagoOrderDetails): Promise<void> {
     const snapshotId = this.toSnapshotId(order.externalReference);
     const snapshot = await this.findSnapshot(this.prisma, snapshotId);
 
     this.ensureProviderOrderMatches(snapshot, order.providerOrderId);
+    
     if (this.isCompleted(snapshot)) {
       return;
     }
@@ -146,10 +152,83 @@ export class CheckoutSnapshotProcessService implements OnModuleDestroy {
     });
   }
 
+  async processCancelledOrder(order: MercadoPagoOrderDetails): Promise<void> {
+    const snapshotId = this.toSnapshotId(order.externalReference);
+    const snapshot = await this.findSnapshot(this.prisma, snapshotId);
+
+    this.ensureProviderOrderMatches(snapshot, order.providerOrderId);
+    if (snapshot.status !== CheckoutSnapshotStatus.ACTIVE) {
+      return;
+    }
+
+    await this.prisma.$transaction(async (transaction) => {
+      const currentSnapshot = await this.findSnapshot(transaction, snapshotId);
+
+      this.ensureProviderOrderMatches(currentSnapshot, order.providerOrderId);
+      if (currentSnapshot.status !== CheckoutSnapshotStatus.ACTIVE) {
+        return;
+      }
+
+      await this.restoreStock(transaction, currentSnapshot.items);
+      await transaction.checkoutSnapshot.update({
+        where: { id: currentSnapshot.id },
+        data: { status: CheckoutSnapshotStatus.EXPIRED },
+      });
+    });
+  }
+
+  async processRefundedOrder(order: MercadoPagoOrderDetails): Promise<void> {
+    const snapshotId = this.toSnapshotId(order.externalReference);
+    const snapshot = await this.findSnapshot(this.prisma, snapshotId);
+
+    this.ensureProviderOrderMatches(snapshot, order.providerOrderId);
+    if (snapshot.status !== CheckoutSnapshotStatus.COMPLETED) {
+      throw new BadRequestException('Checkout snapshot is not completed');
+    }
+
+    if (snapshot.pedidoId === null) {
+      throw new BadRequestException('Checkout snapshot is in an inconsistent state');
+    }
+
+    await this.pedidoService.processMercadoPagoRefund(
+      snapshot.pedidoId,
+      order.providerOrderId,
+    );
+  }
+
   async onModuleDestroy(): Promise<void> {
     await this.prisma.$disconnect();
   }
+  
+/*------------------------------Helpers--------------------------------*/
 
+  private async findSnapshot(client: SnapshotClient,snapshotId: number,): Promise<CheckoutSnapshotForApproval> {
+    const snapshot = await client.checkoutSnapshot.findUnique({
+      where: { id: snapshotId },
+      select: snapshotForApprovalSelect,
+    });
+    
+    if (!snapshot) {
+      throw new NotFoundException('Checkout snapshot not found');
+    }
+    
+    return snapshot;
+  }
+
+  private async restoreStock(
+    transaction: SnapshotTransactionClient,
+    items: CheckoutSnapshotForApproval['items'],
+  ): Promise<void> {
+    for (const item of items) {
+      await transaction.product.update({
+        where: { id: item.productId },
+        data: { stock: { increment: item.cantidad } },
+      });
+    }
+  }
+    
+  /*--------------------------------------Validators----------------------------------*/
+  
   private toSnapshotId(externalReference: string): number {
     const snapshotId = Number(externalReference);
     if (!Number.isFinite(snapshotId) || !Number.isInteger(snapshotId) || snapshotId <= 0) {
@@ -159,26 +238,7 @@ export class CheckoutSnapshotProcessService implements OnModuleDestroy {
     return snapshotId;
   }
 
-  private async findSnapshot(
-    client: SnapshotClient,
-    snapshotId: number,
-  ): Promise<CheckoutSnapshotForApproval> {
-    const snapshot = await client.checkoutSnapshot.findUnique({
-      where: { id: snapshotId },
-      select: snapshotForApprovalSelect,
-    });
-
-    if (!snapshot) {
-      throw new NotFoundException('Checkout snapshot not found');
-    }
-
-    return snapshot;
-  }
-
-  private ensureProviderOrderMatches(
-    snapshot: CheckoutSnapshotForApproval,
-    providerOrderId: string,
-  ): void {
+  private ensureProviderOrderMatches(snapshot: CheckoutSnapshotForApproval,providerOrderId: string,): void {
     if (
       snapshot.providerOrderId !== null &&
       snapshot.providerOrderId !== providerOrderId

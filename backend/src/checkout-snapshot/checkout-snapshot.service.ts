@@ -1,4 +1,11 @@
-import { BadRequestException, HttpStatus, Injectable, OnModuleDestroy } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpStatus,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
 import {
@@ -50,11 +57,13 @@ export class CheckoutSnapshotService implements OnModuleDestroy {
 
   async create(userId: number, checkout: CreateCheckoutSnapshotInput) {
     const idempotencyKey = randomUUID();
+    
     const expiresAt = new Date(
       Date.now() + CheckoutSnapshotService.expirationMinutes * 60 * 1000,
     );
 
     return this.prisma.$transaction(async (transaction) => {
+      
       const cart = await transaction.cart.findUnique({
         where: { userId },
         include: cartForCheckoutInclude,
@@ -114,17 +123,45 @@ export class CheckoutSnapshotService implements OnModuleDestroy {
     });
   }
 
-  async saveMercadoPagoOrder(
-    snapshotId: number,
-    providerOrderId: string,
-    checkoutUrl: string,
-  ): Promise<void> {
+/*Guarda informacion de orden en snapshot */
+  async saveMercadoPagoOrder(snapshotId: number,providerOrderId: string,checkoutUrl: string,): Promise<void> {
     await this.prisma.checkoutSnapshot.update({
       where: { id: snapshotId },
       data: { providerOrderId, checkoutUrl },
     });
   }
 
+/*Busca snapshot por userId */
+  async findStatusForUser(userId: number, snapshotId: number) {
+    if (!Number.isInteger(snapshotId) || snapshotId <= 0) {
+      throw new BadRequestException('Checkout snapshot id must be a positive integer');
+    }
+
+    const snapshot = await this.prisma.checkoutSnapshot.findFirst({
+      where: { id: snapshotId, userId },
+      select: {
+        status: true,
+        pedidoId: true,
+      },
+    });
+
+    if (!snapshot) {
+      throw new NotFoundException('Checkout snapshot not found');
+    }
+
+    if (
+      snapshot.status === CheckoutSnapshotStatus.COMPLETED &&
+      snapshot.pedidoId === null
+    ) {
+      throw new InternalServerErrorException(
+        'Checkout snapshot is in an inconsistent state',
+      );
+    }
+
+    return snapshot;
+  }
+
+/*snapshot fallida*/  
   async markFailedAndRestoreStock(snapshotId: number): Promise<void> {
     await this.prisma.$transaction(async (transaction) => {
       const snapshot = await transaction.checkoutSnapshot.findUnique({
@@ -162,37 +199,7 @@ export class CheckoutSnapshotService implements OnModuleDestroy {
     await this.prisma.$disconnect();
   }
 
-  private ensureCartHasItems(
-    cart: CartForCheckout | null,
-  ): asserts cart is CartForCheckout {
-    if (!cart || cart.items.length === 0) {
-      throw new BadRequestException({
-        statusCode: HttpStatus.BAD_REQUEST,
-        message: 'El carrito está vacío.',
-      });
-    }
-  }
-
-  private ensureProductsAreValid(
-    items: Array<{ product: unknown | null }>,
-  ): void {
-    if (items.some((item) => !item.product)) {
-      throw new BadRequestException({
-        statusCode: HttpStatus.BAD_REQUEST,
-        message: 'El carrito contiene un producto inválido.',
-      });
-    }
-  }
-
-  private ensureStockIsAvailable(items: CartForCheckout['items']): void {
-    if (items.some((item) => item.cantidad > item.product.stock)) {
-      throw new BadRequestException({
-        statusCode: HttpStatus.BAD_REQUEST,
-        code: PedidoErrorCode.INSUFFICIENT_STOCK,
-        message: 'Un o más productos ya no tienen stock suficiente',
-      });
-    }
-  }
+ /*----------------------------------------Pricing and cart-------------------------------------------*/ 
 
   private calculateSubtotal(items: CartForCheckout['items']): Prisma.Decimal {
     return items.reduce(
@@ -212,9 +219,9 @@ export class CheckoutSnapshotService implements OnModuleDestroy {
 
     const serviceFee = CheckoutSnapshotService.serviceFee;
     const deliveryFee = deliveryMethod === DeliveryMethod.PICKUP
-      ? new Prisma.Decimal(0)
-      : subtotal.mul(CheckoutSnapshotService.deliveryPercentage);
-
+    ? new Prisma.Decimal(0)
+    : subtotal.mul(CheckoutSnapshotService.deliveryPercentage);
+    
     return {
       subtotal,
       serviceFee,
@@ -222,7 +229,7 @@ export class CheckoutSnapshotService implements OnModuleDestroy {
       total: subtotal.plus(serviceFee).plus(deliveryFee),
     };
   }
-
+  
   private async reserveStock(
     transaction: Prisma.TransactionClient,
     items: CartForCheckout['items'],
@@ -237,7 +244,7 @@ export class CheckoutSnapshotService implements OnModuleDestroy {
           stock: { decrement: item.cantidad },
         },
       });
-
+      
       if (updatedProducts.count !== 1) {
         throw new BadRequestException({
           statusCode: HttpStatus.BAD_REQUEST,
@@ -247,13 +254,15 @@ export class CheckoutSnapshotService implements OnModuleDestroy {
       }
     }
   }
-
+  
+  /*---------------------------------------Validators---------------------------------------------------*/
+  
   private toPrismaDeliveryMethod(deliveryMethod: DeliveryMethod): PrismaDeliveryMethod {
     return deliveryMethod === DeliveryMethod.PICKUP
-      ? PrismaDeliveryMethod.PICKUP
-      : PrismaDeliveryMethod.DELIVERY;
+    ? PrismaDeliveryMethod.PICKUP
+    : PrismaDeliveryMethod.DELIVERY;
   }
-
+  
   private getDeliveryAddress(delivery: CreateCheckoutSnapshotInput['delivery']) {
     if (delivery.method === DeliveryMethod.DELIVERY) {
       return {
@@ -266,7 +275,7 @@ export class CheckoutSnapshotService implements OnModuleDestroy {
         especificaciones: delivery.address?.especificaciones ?? null,
       };
     }
-
+    
     return {
       calle: null,
       numero: null,
@@ -276,5 +285,37 @@ export class CheckoutSnapshotService implements OnModuleDestroy {
       departamento: null,
       especificaciones: null,
     };
+  }
+
+  private ensureCartHasItems(
+    cart: CartForCheckout | null,
+  ): asserts cart is CartForCheckout {
+    if (!cart || cart.items.length === 0) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'El carrito está vacío.',
+      });
+    }
+  }
+  
+  private ensureProductsAreValid(
+    items: Array<{ product: unknown | null }>,
+  ): void {
+    if (items.some((item) => !item.product)) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'El carrito contiene un producto inválido.',
+      });
+    }
+  }
+  
+  private ensureStockIsAvailable(items: CartForCheckout['items']): void {
+    if (items.some((item) => item.cantidad > item.product.stock)) {
+      throw new BadRequestException({
+        statusCode: HttpStatus.BAD_REQUEST,
+        code: PedidoErrorCode.INSUFFICIENT_STOCK,
+        message: 'Un o más productos ya no tienen stock suficiente',
+      });
+    }
   }
 }

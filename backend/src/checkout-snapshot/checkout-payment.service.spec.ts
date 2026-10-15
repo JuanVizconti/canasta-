@@ -84,7 +84,6 @@ describe('CheckoutPaymentService', () => {
       idempotencyKey: 'snapshot-idempotency-key',
       total: '20500.00',
       expirationTime: 'PT30M',
-      payerEmail: 'juan@email.com',
       returnUrl: 'https://frontend.example/checkout/success?snapshotId=20',
     });
     expect(checkoutSnapshotService.saveMercadoPagoOrder).toHaveBeenCalledWith(

@@ -52,6 +52,14 @@ export class MercadoPagoController {
       await this.checkoutSnapshotProcessService.processApprovedOrder(order);
     }
 
+    if (action === 'CANCELLED') {
+      await this.checkoutSnapshotProcessService.processCancelledOrder(order);
+    }
+
+    if (action === 'REFUNDED') {
+      await this.checkoutSnapshotProcessService.processRefundedOrder(order);
+    }
+
     console.log('Mercado Pago order fetched');
     console.log({
       providerOrderId: order.providerOrderId,

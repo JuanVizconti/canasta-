@@ -68,6 +68,48 @@ describe('PedidoService', () => {
     return { prisma, transaction };
   };
 
+  const mercadoPagoPedido = (overrides: Record<string, unknown> = {}) => ({
+    id: 27,
+    estado: PedidoEstado.CONFIRMED,
+    payment: {
+      id: 51,
+      method: PaymentMethod.MERCADO_PAGO,
+      status: PaymentStatus.APPROVED,
+      providerOrderId: 'mp-order-27',
+    },
+    items: [
+      { productId: 4, cantidad: 2 },
+      { productId: 8, cantidad: 1 },
+    ],
+    ...overrides,
+  });
+
+  const configureMercadoPagoRefundTransaction = (
+    service: PedidoService,
+    pedido = mercadoPagoPedido(),
+  ) => {
+    const transaction = {
+      pedido: {
+        findUnique: jest.fn().mockResolvedValue(pedido),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      payment: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      product: {
+        update: jest.fn().mockResolvedValue({}),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn((callback: (client: typeof transaction) => unknown) =>
+        callback(transaction),
+      ),
+    };
+    (service as unknown as { prisma: typeof prisma }).prisma = prisma;
+
+    return { prisma, transaction };
+  };
+
   it('creates a confirmed CASH pedido from the real cart and clears that cart atomically', async () => {
     const { service } = createService();
     const { prisma, transaction } = configureTransaction(service);
@@ -249,6 +291,133 @@ describe('PedidoService', () => {
     expect(prisma.pedido.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { userId: 7 },
     }));
+  });
+
+  it('refunds a confirmed Mercado Pago pedido and restores every PedidoItem stock atomically', async () => {
+    const { service } = createService();
+    const { prisma, transaction } = configureMercadoPagoRefundTransaction(service);
+
+    await expect(service.processMercadoPagoRefund(27, 'mp-order-27')).resolves.toBeUndefined();
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(transaction.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: 51, status: PaymentStatus.APPROVED },
+      data: { status: PaymentStatus.REFUNDED },
+    });
+    expect(transaction.pedido.updateMany).toHaveBeenCalledWith({
+      where: { id: 27, estado: PedidoEstado.CONFIRMED },
+      data: { estado: PedidoEstado.CANCELLED },
+    });
+    expect(transaction.product.update).toHaveBeenCalledWith({
+      where: { id: 4 },
+      data: { stock: { increment: 2 } },
+    });
+    expect(transaction.product.update).toHaveBeenCalledWith({
+      where: { id: 8 },
+      data: { stock: { increment: 1 } },
+    });
+  });
+
+  it('does not restore stock twice for an already refunded cancelled pedido', async () => {
+    const { service } = createService();
+    const { transaction } = configureMercadoPagoRefundTransaction(service, mercadoPagoPedido({
+      estado: PedidoEstado.CANCELLED,
+      payment: {
+        id: 51,
+        method: PaymentMethod.MERCADO_PAGO,
+        status: PaymentStatus.REFUNDED,
+        providerOrderId: 'mp-order-27',
+      },
+    }));
+
+    await expect(service.processMercadoPagoRefund(27, 'mp-order-27')).resolves.toBeUndefined();
+
+    expect(transaction.payment.updateMany).not.toHaveBeenCalled();
+    expect(transaction.pedido.updateMany).not.toHaveBeenCalled();
+    expect(transaction.product.update).not.toHaveBeenCalled();
+  });
+
+  it('uses the conditional payment transition to prevent duplicate concurrent stock restoration', async () => {
+    const { service } = createService();
+    const initialPedido = mercadoPagoPedido();
+    const refundedPedido = mercadoPagoPedido({
+      estado: PedidoEstado.CANCELLED,
+      payment: {
+        id: 51,
+        method: PaymentMethod.MERCADO_PAGO,
+        status: PaymentStatus.REFUNDED,
+        providerOrderId: 'mp-order-27',
+      },
+    });
+    const { transaction } = configureMercadoPagoRefundTransaction(service, initialPedido);
+    transaction.payment.updateMany.mockResolvedValueOnce({ count: 0 });
+    transaction.pedido.findUnique
+      .mockResolvedValueOnce(initialPedido)
+      .mockResolvedValueOnce(refundedPedido);
+
+    await expect(service.processMercadoPagoRefund(27, 'mp-order-27')).resolves.toBeUndefined();
+
+    expect(transaction.payment.updateMany).toHaveBeenCalledTimes(1);
+    expect(transaction.pedido.updateMany).not.toHaveBeenCalled();
+    expect(transaction.product.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects a provider order that does not match the persisted Mercado Pago payment', async () => {
+    const { service } = createService();
+    const { transaction } = configureMercadoPagoRefundTransaction(service);
+
+    await expect(service.processMercadoPagoRefund(27, 'mp-order-other'))
+      .rejects.toThrow('Mercado Pago order does not match pedido payment');
+
+    expect(transaction.payment.updateMany).not.toHaveBeenCalled();
+    expect(transaction.pedido.updateMany).not.toHaveBeenCalled();
+    expect(transaction.product.update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['missing pedido', null],
+    ['missing payment', mercadoPagoPedido({ payment: null })],
+    ['non-Mercado Pago payment', mercadoPagoPedido({
+      payment: {
+        id: 51,
+        method: PaymentMethod.CASH,
+        status: PaymentStatus.APPROVED,
+        providerOrderId: null,
+      },
+    })],
+    ['incompatible states', mercadoPagoPedido({
+      estado: PedidoEstado.CANCELLED,
+      payment: {
+        id: 51,
+        method: PaymentMethod.MERCADO_PAGO,
+        status: PaymentStatus.APPROVED,
+        providerOrderId: 'mp-order-27',
+      },
+    })],
+  ])('rejects %s without mutating payment, pedido, or stock', async (_name, pedido) => {
+    const { service } = createService();
+    const { transaction } = configureMercadoPagoRefundTransaction(service, pedido as never);
+
+    await expect(service.processMercadoPagoRefund(27, 'mp-order-27')).rejects.toBeInstanceOf(
+      Error,
+    );
+
+    expect(transaction.payment.updateMany).not.toHaveBeenCalled();
+    expect(transaction.pedido.updateMany).not.toHaveBeenCalled();
+    expect(transaction.product.update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['payment transition', 'payment', 'updateMany'],
+    ['pedido cancellation', 'pedido', 'updateMany'],
+    ['stock restoration', 'product', 'update'],
+  ] as const)('propagates a %s failure so the refund transaction rolls back', async (_name, section, method) => {
+    const { service } = createService();
+    const { transaction } = configureMercadoPagoRefundTransaction(service);
+    const failure = new Error('database failure');
+    (transaction[section][method] as jest.Mock).mockRejectedValueOnce(failure);
+
+    await expect(service.processMercadoPagoRefund(27, 'mp-order-27')).rejects.toThrow(failure);
   });
 
   it('quotes delivery using the cart subtotal and Decimal calculations', async () => {
