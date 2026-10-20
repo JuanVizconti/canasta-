@@ -27,7 +27,7 @@ export class CheckoutPaymentService {
         idempotencyKey: snapshot.idempotencyKey,
         total: snapshot.total.toFixed(2),
         expirationTime: this.toExpirationTime(snapshot.expiresAt),
-        returnUrl: this.getSuccessReturnUrl(snapshot.id),
+        returnUrls: this.getReturnUrls(snapshot.id),
       });
     } catch (error) {
       await this.checkoutSnapshotService.markFailedAndRestoreStock(snapshot.id);
@@ -44,7 +44,11 @@ export class CheckoutPaymentService {
     return { checkoutUrl: order.checkoutUrl };
   }
 
-  private getSuccessReturnUrl(snapshotId: number): string {
+  private getReturnUrls(snapshotId: number): {
+    success: string;
+    pending: string;
+    failure: string;
+  } {
     const frontendUrl = process.env.FRONTEND_URL;
     const normalizedFrontendUrl = frontendUrl?.replace(/\/+$/, '');
 
@@ -52,7 +56,13 @@ export class CheckoutPaymentService {
       throw new Error('FRONTEND_URL is required');
     }
 
-    return `${normalizedFrontendUrl}/checkout/success?snapshotId=${snapshotId}`;
+    const paymentStatusUrl = `${normalizedFrontendUrl}/checkout/success?snapshotId=${snapshotId}`;
+
+    return {
+      success: paymentStatusUrl,
+      pending: paymentStatusUrl,
+      failure: `${normalizedFrontendUrl}/checkout/confirmation`,
+    };
   }
 
   private toExpirationTime(expiresAt: Date): string {

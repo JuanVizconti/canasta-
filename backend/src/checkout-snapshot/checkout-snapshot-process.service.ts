@@ -54,7 +54,7 @@ type CheckoutSnapshotForApproval = Prisma.CheckoutSnapshotGetPayload<{
 type SnapshotClient = Pick<PrismaClient, 'checkoutSnapshot'>;
 type SnapshotTransactionClient = Pick<
   Prisma.TransactionClient,
-  'checkoutSnapshot' | 'product'
+  'cart' | 'cartItem' | 'checkoutSnapshot' | 'product'
 >;
 
 @Injectable()
@@ -94,6 +94,29 @@ export class CheckoutSnapshotProcessService implements OnModuleDestroy {
       }
 
       this.ensureSnapshotCanBeCompleted(currentSnapshot);
+
+      const claim = await transaction.checkoutSnapshot.updateMany({
+        where: {
+          id: snapshotId,
+          status: CheckoutSnapshotStatus.ACTIVE,
+        },
+        data: { status: CheckoutSnapshotStatus.COMPLETED },
+      });
+
+      if (claim.count === 0) {
+        const claimedSnapshot = await this.findSnapshot(transaction, snapshotId);
+
+        this.ensureProviderOrderMatches(claimedSnapshot, order.providerOrderId);
+        if (this.isCompleted(claimedSnapshot)) {
+          return;
+        }
+
+        if (claimedSnapshot.status === CheckoutSnapshotStatus.ACTIVE) {
+          throw new BadRequestException('Checkout snapshot could not be claimed');
+        }
+
+        this.ensureSnapshotCanBeCompleted(claimedSnapshot);
+      }
 
       const pedido = await transaction.pedido.create({
         data: {
@@ -142,12 +165,11 @@ export class CheckoutSnapshotProcessService implements OnModuleDestroy {
         },
       });
 
+      await this.clearCartForUser(transaction, currentSnapshot.userId);
+
       await transaction.checkoutSnapshot.update({
         where: { id: currentSnapshot.id },
-        data: {
-          status: CheckoutSnapshotStatus.COMPLETED,
-          pedidoId: pedido.id,
-        },
+        data: { pedidoId: pedido.id },
       });
     });
   }
@@ -169,11 +191,26 @@ export class CheckoutSnapshotProcessService implements OnModuleDestroy {
         return;
       }
 
-      await this.restoreStock(transaction, currentSnapshot.items);
-      await transaction.checkoutSnapshot.update({
-        where: { id: currentSnapshot.id },
+      const claim = await transaction.checkoutSnapshot.updateMany({
+        where: {
+          id: snapshotId,
+          status: CheckoutSnapshotStatus.ACTIVE,
+        },
         data: { status: CheckoutSnapshotStatus.EXPIRED },
       });
+
+      if (claim.count === 0) {
+        const claimedSnapshot = await this.findSnapshot(transaction, snapshotId);
+
+        this.ensureProviderOrderMatches(claimedSnapshot, order.providerOrderId);
+        if (claimedSnapshot.status === CheckoutSnapshotStatus.ACTIVE) {
+          throw new BadRequestException('Checkout snapshot could not be expired');
+        }
+
+        return;
+      }
+
+      await this.restoreStock(transaction, currentSnapshot.items);
     });
   }
 
@@ -213,6 +250,20 @@ export class CheckoutSnapshotProcessService implements OnModuleDestroy {
     }
     
     return snapshot;
+  }
+
+  private async clearCartForUser(
+    transaction: SnapshotTransactionClient,
+    userId: number,
+  ): Promise<void> {
+    await transaction.cartItem.deleteMany({
+      where: { cart: { userId } },
+    });
+
+    await transaction.cart.updateMany({
+      where: { userId },
+      data: { price: new Prisma.Decimal(0) },
+    });
   }
 
   private async restoreStock(

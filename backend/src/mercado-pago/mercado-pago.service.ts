@@ -67,9 +67,9 @@ export class MercadoPagoService {
         expiration_time: input.expirationTime,
         config: {
           online: {
-            success_url: input.returnUrl,
-            failure_url: input.returnUrl,
-            pending_url: input.returnUrl,
+            success_url: input.returnUrls.success,
+            failure_url: input.returnUrls.failure,
+            pending_url: input.returnUrls.pending,
             auto_return: 'all',
           },
         },

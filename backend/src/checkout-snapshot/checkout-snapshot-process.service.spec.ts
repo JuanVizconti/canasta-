@@ -73,10 +73,17 @@ describe('CheckoutSnapshotProcessService', () => {
     const transaction = {
       checkoutSnapshot: {
         findUnique: jest.fn().mockResolvedValue(snapshot),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         update: jest.fn().mockResolvedValue({}),
       },
       product: {
         update: jest.fn().mockResolvedValue({}),
+      },
+      cart: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      cartItem: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 2 }),
       },
       pedido: {
         create: jest.fn().mockResolvedValue({ id: 91 }),
@@ -98,19 +105,31 @@ describe('CheckoutSnapshotProcessService', () => {
     };
     (service as unknown as { prisma: typeof prisma }).prisma = prisma;
 
-    return { service, prisma, transaction, pedidoService };
+    return {
+      service,
+      prisma,
+      transaction,
+      pedidoService,
+    };
   };
 
   beforeEach(() => {
     process.env.DATABASE_URL ??= 'postgresql://canasta:canasta@localhost:5432/canasta?schema=public';
   });
 
-  it('turns an ACTIVE approved snapshot into a confirmed pedido, items, approved payment, and completed snapshot atomically', async () => {
+  it('turns an ACTIVE approved snapshot into a confirmed pedido, payment, completed snapshot, and empty cart atomically', async () => {
     const { service, prisma, transaction } = createService();
 
     await expect(service.processApprovedOrder(approvedOrder())).resolves.toBeUndefined();
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(transaction.checkoutSnapshot.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 20,
+        status: CheckoutSnapshotStatus.ACTIVE,
+      },
+      data: { status: CheckoutSnapshotStatus.COMPLETED },
+    });
     expect(transaction.pedido.create).toHaveBeenCalledWith({
       data: {
         userId: 7,
@@ -165,16 +184,41 @@ describe('CheckoutSnapshotProcessService', () => {
         idempotencyKey: 'snapshot-key-20',
       },
     });
+    expect(transaction.cartItem.deleteMany).toHaveBeenCalledWith({
+      where: { cart: { userId: 7 } },
+    });
+    expect(transaction.cart.updateMany).toHaveBeenCalledWith({
+      where: { userId: 7 },
+      data: { price: new Prisma.Decimal(0) },
+    });
     expect(transaction.checkoutSnapshot.update).toHaveBeenCalledWith({
       where: { id: 20 },
-      data: {
-        status: CheckoutSnapshotStatus.COMPLETED,
-        pedidoId: 91,
-      },
+      data: { pedidoId: 91 },
     });
     expect(transaction.product.update).not.toHaveBeenCalled();
-    expect(transaction).not.toHaveProperty('cart');
-    expect(transaction).not.toHaveProperty('cartItem');
+
+    const claimOrder = transaction.checkoutSnapshot.updateMany.mock.invocationCallOrder[0];
+    expect(claimOrder).toBeLessThan(transaction.pedido.create.mock.invocationCallOrder[0]);
+    expect(claimOrder).toBeLessThan(transaction.pedidoItem.createMany.mock.invocationCallOrder[0]);
+    expect(claimOrder).toBeLessThan(transaction.payment.create.mock.invocationCallOrder[0]);
+    expect(claimOrder).toBeLessThan(transaction.cartItem.deleteMany.mock.invocationCallOrder[0]);
+    expect(claimOrder).toBeLessThan(transaction.cart.updateMany.mock.invocationCallOrder[0]);
+  });
+
+  it('clears the cart normally when the approved user has no cart items', async () => {
+    const { service, transaction } = createService();
+    transaction.cartItem.deleteMany.mockResolvedValue({ count: 0 });
+    transaction.cart.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(service.processApprovedOrder(approvedOrder())).resolves.toBeUndefined();
+
+    expect(transaction.cartItem.deleteMany).toHaveBeenCalledWith({
+      where: { cart: { userId: 7 } },
+    });
+    expect(transaction.checkoutSnapshot.update).toHaveBeenCalledWith({
+      where: { id: 20 },
+      data: { pedidoId: 91 },
+    });
   });
 
   it('copies nullable provider metadata from the snapshot without generating a new key', async () => {
@@ -201,11 +245,93 @@ describe('CheckoutSnapshotProcessService', () => {
       status: CheckoutSnapshotStatus.COMPLETED,
       pedidoId: 91,
     });
-    const { service, prisma } = createService(completedSnapshot);
+    const { service, prisma, transaction } = createService(completedSnapshot);
 
     await expect(service.processApprovedOrder(approvedOrder())).resolves.toBeUndefined();
 
     expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(transaction.cartItem.deleteMany).not.toHaveBeenCalled();
+    expect(transaction.cart.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('does not duplicate side effects when another transaction completes the snapshot claim', async () => {
+    const { service, transaction } = createService();
+    transaction.checkoutSnapshot.updateMany.mockResolvedValueOnce({ count: 0 });
+    transaction.checkoutSnapshot.findUnique
+      .mockResolvedValueOnce(activeSnapshot())
+      .mockResolvedValueOnce(activeSnapshot({
+        status: CheckoutSnapshotStatus.COMPLETED,
+        pedidoId: 91,
+      }));
+
+    await expect(service.processApprovedOrder(approvedOrder())).resolves.toBeUndefined();
+
+    expect(transaction.pedido.create).not.toHaveBeenCalled();
+    expect(transaction.pedidoItem.createMany).not.toHaveBeenCalled();
+    expect(transaction.payment.create).not.toHaveBeenCalled();
+    expect(transaction.cartItem.deleteMany).not.toHaveBeenCalled();
+    expect(transaction.cart.updateMany).not.toHaveBeenCalled();
+    expect(transaction.checkoutSnapshot.update).not.toHaveBeenCalled();
+  });
+
+  it.each([CheckoutSnapshotStatus.EXPIRED, CheckoutSnapshotStatus.FAILED])(
+    'does not create domain records when the lost claim reveals a %s snapshot',
+    async (status) => {
+      const { service, transaction } = createService();
+      transaction.checkoutSnapshot.updateMany.mockResolvedValueOnce({ count: 0 });
+      transaction.checkoutSnapshot.findUnique
+        .mockResolvedValueOnce(activeSnapshot())
+        .mockResolvedValueOnce(activeSnapshot({ status }));
+
+      await expect(service.processApprovedOrder(approvedOrder()))
+        .rejects.toThrow('Checkout snapshot cannot be completed');
+
+      expect(transaction.pedido.create).not.toHaveBeenCalled();
+      expect(transaction.pedidoItem.createMany).not.toHaveBeenCalled();
+      expect(transaction.payment.create).not.toHaveBeenCalled();
+      expect(transaction.cartItem.deleteMany).not.toHaveBeenCalled();
+      expect(transaction.cart.updateMany).not.toHaveBeenCalled();
+      expect(transaction.checkoutSnapshot.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects a lost claim that reveals a completed snapshot without pedidoId', async () => {
+    const { service, transaction } = createService();
+    transaction.checkoutSnapshot.updateMany.mockResolvedValueOnce({ count: 0 });
+    transaction.checkoutSnapshot.findUnique
+      .mockResolvedValueOnce(activeSnapshot())
+      .mockResolvedValueOnce(activeSnapshot({
+        status: CheckoutSnapshotStatus.COMPLETED,
+        pedidoId: null,
+      }));
+
+    await expect(service.processApprovedOrder(approvedOrder()))
+      .rejects.toThrow('Checkout snapshot is in an inconsistent state');
+
+    expect(transaction.pedido.create).not.toHaveBeenCalled();
+    expect(transaction.pedidoItem.createMany).not.toHaveBeenCalled();
+    expect(transaction.payment.create).not.toHaveBeenCalled();
+    expect(transaction.cartItem.deleteMany).not.toHaveBeenCalled();
+    expect(transaction.cart.updateMany).not.toHaveBeenCalled();
+    expect(transaction.checkoutSnapshot.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unexpected ACTIVE snapshot after a lost claim without side effects', async () => {
+    const { service, transaction } = createService();
+    transaction.checkoutSnapshot.updateMany.mockResolvedValueOnce({ count: 0 });
+    transaction.checkoutSnapshot.findUnique
+      .mockResolvedValueOnce(activeSnapshot())
+      .mockResolvedValueOnce(activeSnapshot());
+
+    await expect(service.processApprovedOrder(approvedOrder()))
+      .rejects.toThrow('Checkout snapshot could not be claimed');
+
+    expect(transaction.pedido.create).not.toHaveBeenCalled();
+    expect(transaction.pedidoItem.createMany).not.toHaveBeenCalled();
+    expect(transaction.payment.create).not.toHaveBeenCalled();
+    expect(transaction.cartItem.deleteMany).not.toHaveBeenCalled();
+    expect(transaction.cart.updateMany).not.toHaveBeenCalled();
+    expect(transaction.checkoutSnapshot.update).not.toHaveBeenCalled();
   });
 
   it.each(['', 'abc', '15abc', '0', '-1'])(
@@ -281,7 +407,18 @@ describe('CheckoutSnapshotProcessService', () => {
     await expect(service.processApprovedOrder(approvedOrder())).rejects.toThrow(failure);
   });
 
-  it('expires an ACTIVE snapshot and restores every reserved product stock atomically', async () => {
+  it('propagates cart cleanup failures before completing the snapshot transaction', async () => {
+    const { service, transaction } = createService();
+    const failure = new Error('cart cleanup failed');
+    transaction.cartItem.deleteMany.mockRejectedValueOnce(failure);
+
+    await expect(service.processApprovedOrder(approvedOrder())).rejects.toThrow(failure);
+
+    expect(transaction.checkoutSnapshot.update).not.toHaveBeenCalled();
+    expect(transaction.product.update).not.toHaveBeenCalled();
+  });
+
+  it('expires an ACTIVE cancelled snapshot and restores every reserved product stock atomically', async () => {
     const { service, prisma, transaction } = createService();
 
     await expect(service.processCancelledOrder(approvedOrder({
@@ -290,6 +427,13 @@ describe('CheckoutSnapshotProcessService', () => {
     }))).resolves.toBeUndefined();
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(transaction.checkoutSnapshot.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 20,
+        status: CheckoutSnapshotStatus.ACTIVE,
+      },
+      data: { status: CheckoutSnapshotStatus.EXPIRED },
+    });
     expect(transaction.product.update).toHaveBeenCalledWith({
       where: { id: 4 },
       data: { stock: { increment: 2 } },
@@ -298,20 +442,16 @@ describe('CheckoutSnapshotProcessService', () => {
       where: { id: 8 },
       data: { stock: { increment: 1 } },
     });
-    expect(transaction.checkoutSnapshot.update).toHaveBeenCalledWith({
-      where: { id: 20 },
-      data: { status: CheckoutSnapshotStatus.EXPIRED },
-    });
-    expect(transaction.pedido.create).not.toHaveBeenCalled();
-    expect(transaction.pedidoItem.createMany).not.toHaveBeenCalled();
-    expect(transaction.payment.create).not.toHaveBeenCalled();
+    expect(
+      transaction.checkoutSnapshot.updateMany.mock.invocationCallOrder[0],
+    ).toBeLessThan(transaction.product.update.mock.invocationCallOrder[0]);
   });
 
   it.each([
     CheckoutSnapshotStatus.EXPIRED,
     CheckoutSnapshotStatus.FAILED,
     CheckoutSnapshotStatus.COMPLETED,
-  ])('does not restore stock or mutate a %s snapshot after a cancelled webhook', async (status) => {
+  ])('does not expire or restore stock for a %s snapshot after a cancelled webhook', async (status) => {
     const snapshot = activeSnapshot({
       status,
       pedidoId: status === CheckoutSnapshotStatus.COMPLETED ? 91 : null,
@@ -371,7 +511,44 @@ describe('CheckoutSnapshotProcessService', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('does not mark the snapshot expired when stock restoration fails', async () => {
+  it.each([
+    CheckoutSnapshotStatus.EXPIRED,
+    CheckoutSnapshotStatus.COMPLETED,
+    CheckoutSnapshotStatus.FAILED,
+  ])('does not restore stock when a lost expiration claim reveals a %s snapshot', async (status) => {
+    const { service, transaction } = createService();
+    transaction.checkoutSnapshot.updateMany.mockResolvedValueOnce({ count: 0 });
+    transaction.checkoutSnapshot.findUnique
+      .mockResolvedValueOnce(activeSnapshot())
+      .mockResolvedValueOnce(activeSnapshot({
+        status,
+        pedidoId: status === CheckoutSnapshotStatus.COMPLETED ? 91 : null,
+      }));
+
+    await expect(service.processCancelledOrder(approvedOrder({
+      status: 'canceled',
+      statusDetail: 'canceled',
+    }))).resolves.toBeUndefined();
+
+    expect(transaction.product.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unexpected ACTIVE snapshot after a lost expiration claim', async () => {
+    const { service, transaction } = createService();
+    transaction.checkoutSnapshot.updateMany.mockResolvedValueOnce({ count: 0 });
+    transaction.checkoutSnapshot.findUnique
+      .mockResolvedValueOnce(activeSnapshot())
+      .mockResolvedValueOnce(activeSnapshot());
+
+    await expect(service.processCancelledOrder(approvedOrder({
+      status: 'canceled',
+      statusDetail: 'canceled',
+    }))).rejects.toThrow('Checkout snapshot could not be expired');
+
+    expect(transaction.product.update).not.toHaveBeenCalled();
+  });
+
+  it('propagates stock restoration failures so the expiration claim rolls back', async () => {
     const { service, transaction } = createService();
     const failure = new Error('stock update failed');
     transaction.product.update.mockRejectedValueOnce(failure);
@@ -381,20 +558,7 @@ describe('CheckoutSnapshotProcessService', () => {
       statusDetail: 'canceled',
     }))).rejects.toThrow(failure);
 
-    expect(transaction.checkoutSnapshot.update).not.toHaveBeenCalled();
-  });
-
-  it('propagates snapshot-expiration failures so the transaction rolls back stock restoration', async () => {
-    const { service, transaction } = createService();
-    const failure = new Error('snapshot update failed');
-    transaction.checkoutSnapshot.update.mockRejectedValueOnce(failure);
-
-    await expect(service.processCancelledOrder(approvedOrder({
-      status: 'canceled',
-      statusDetail: 'canceled',
-    }))).rejects.toThrow(failure);
-
-    expect(transaction.product.update).toHaveBeenCalledTimes(2);
+    expect(transaction.checkoutSnapshot.updateMany).toHaveBeenCalledTimes(1);
   });
 
   it('delegates a completed snapshot refund to the pedido domain without mutating the snapshot', async () => {

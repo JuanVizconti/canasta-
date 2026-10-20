@@ -84,7 +84,11 @@ describe('CheckoutPaymentService', () => {
       idempotencyKey: 'snapshot-idempotency-key',
       total: '20500.00',
       expirationTime: 'PT30M',
-      returnUrl: 'https://frontend.example/checkout/success?snapshotId=20',
+      returnUrls: {
+        success: 'https://frontend.example/checkout/success?snapshotId=20',
+        pending: 'https://frontend.example/checkout/success?snapshotId=20',
+        failure: 'https://frontend.example/checkout/confirmation',
+      },
     });
     expect(checkoutSnapshotService.saveMercadoPagoOrder).toHaveBeenCalledWith(
       20,

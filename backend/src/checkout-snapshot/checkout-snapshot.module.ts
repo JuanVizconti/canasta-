@@ -5,6 +5,7 @@ import { PedidoModule } from '../pedido/pedido.module';
 import { CheckoutController } from './checkout.controller';
 import { CheckoutPaymentService } from './checkout-payment.service';
 import { CheckoutSnapshotProcessService } from './checkout-snapshot-process.service';
+import { CheckoutSnapshotReconciliationService } from './checkout-snapshot-reconciliation.service';
 import { CheckoutSnapshotStatusController } from './checkout-snapshot-status.controller';
 import { CheckoutSnapshotService } from './checkout-snapshot.service';
 
@@ -13,6 +14,7 @@ import { CheckoutSnapshotService } from './checkout-snapshot.service';
   controllers: [CheckoutController, CheckoutSnapshotStatusController],
   providers: [
     CheckoutSnapshotService,
+    CheckoutSnapshotReconciliationService,
     CheckoutSnapshotProcessService,
     CheckoutPaymentService,
   ],

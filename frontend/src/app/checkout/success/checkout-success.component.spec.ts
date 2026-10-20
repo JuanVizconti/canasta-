@@ -5,6 +5,8 @@ import {
   CheckoutPaymentService,
   CheckoutSnapshotStatusResponse,
 } from '../service/checkout-payment.service';
+import { CartService } from '../../cart/service/cart.service';
+import { CheckoutService } from '../service/checkout.service';
 import { CheckoutSuccessComponent } from './checkout-success.component';
 
 describe('CheckoutSuccessComponent', () => {
@@ -13,12 +15,16 @@ describe('CheckoutSuccessComponent', () => {
   let snapshotId: string | null;
   let response: Observable<CheckoutSnapshotStatusResponse>;
   let getStatusCalls: number[];
+  let refreshCartCalls: number;
+  let clearCheckoutCalls: number;
   let navigatedTo: unknown[] | undefined;
 
   beforeEach(async () => {
     snapshotId = '15';
     response = of({ status: 'ACTIVE', pedidoId: null });
     getStatusCalls = [];
+    refreshCartCalls = 0;
+    clearCheckoutCalls = 0;
     navigatedTo = undefined;
 
     await TestBed.configureTestingModule({
@@ -48,6 +54,23 @@ describe('CheckoutSuccessComponent', () => {
             },
           },
         },
+        {
+          provide: CartService,
+          useValue: {
+            getCart: () => {
+              refreshCartCalls += 1;
+              return of({ id: 12, price: '0.00', items: [] });
+            },
+          },
+        },
+        {
+          provide: CheckoutService,
+          useValue: {
+            clearCheckout: () => {
+              clearCheckoutCalls += 1;
+            },
+          },
+        },
       ],
     }).compileComponents();
   });
@@ -72,14 +95,39 @@ describe('CheckoutSuccessComponent', () => {
     component.refreshStatus();
 
     expect(getStatusCalls).toEqual([15, 15]);
+    expect(refreshCartCalls).toBe(0);
+    expect(clearCheckoutCalls).toBe(0);
   });
 
-  it('shows the completed message and navigates to its persisted pedido', () => {
+  it('refreshes the cart and clears completed checkout state once', () => {
     response = of({ status: 'COMPLETED', pedidoId: 84 });
     createComponent();
 
     expect(fixture.nativeElement.textContent).toContain('Pago confirmado');
     expect(fixture.nativeElement.textContent).toContain('Tu pedido fue creado correctamente.');
+    expect(refreshCartCalls).toBe(1);
+    expect(clearCheckoutCalls).toBe(1);
+
+    component.refreshStatus();
+
+    expect(refreshCartCalls).toBe(1);
+    expect(clearCheckoutCalls).toBe(1);
+  });
+
+  it('refreshes the cart when a manual refresh changes ACTIVE to COMPLETED', () => {
+    createComponent();
+
+    response = of({ status: 'COMPLETED', pedidoId: 84 });
+    component.refreshStatus();
+
+    expect(getStatusCalls).toEqual([15, 15]);
+    expect(refreshCartCalls).toBe(1);
+    expect(clearCheckoutCalls).toBe(1);
+  });
+
+  it('shows the completed message and navigates to its persisted pedido', () => {
+    response = of({ status: 'COMPLETED', pedidoId: 84 });
+    createComponent();
 
     component.followPedido();
     expect(navigatedTo).toEqual(['/pedidos', 84]);
@@ -93,6 +141,8 @@ describe('CheckoutSuccessComponent', () => {
     createComponent();
 
     expect(fixture.nativeElement.textContent).toContain(message);
+    expect(refreshCartCalls).toBe(0);
+    expect(clearCheckoutCalls).toBe(0);
   });
 
   it('shows a request error and retries manually', () => {
@@ -104,6 +154,8 @@ describe('CheckoutSuccessComponent', () => {
 
     component.refreshStatus();
     expect(getStatusCalls).toEqual([15, 15]);
+    expect(refreshCartCalls).toBe(0);
+    expect(clearCheckoutCalls).toBe(0);
   });
 
   it.each([null, '0', '-1', 'invalid'])('does not call the backend for invalid snapshot id %s', (id) => {

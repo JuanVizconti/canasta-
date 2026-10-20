@@ -4,6 +4,8 @@ import {
   CheckoutPaymentService,
   CheckoutSnapshotStatusResponse,
 } from '../service/checkout-payment.service';
+import { CartService } from '../../cart/service/cart.service';
+import { CheckoutService } from '../service/checkout.service';
 
 @Component({
   selector: 'app-checkout-success',
@@ -14,7 +16,10 @@ export class CheckoutSuccessComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly checkoutPaymentService = inject(CheckoutPaymentService);
+  private readonly cartService = inject(CartService);
+  private readonly checkoutService = inject(CheckoutService);
   private snapshotId: number | null = null;
+  private hasRefreshedCompletedCart = false;
 
   readonly status = signal<CheckoutSnapshotStatusResponse | null>(null);
   readonly isLoading = signal(false);
@@ -63,11 +68,22 @@ export class CheckoutSuccessComponent implements OnInit {
       next: (status) => {
         this.status.set(status);
         this.isLoading.set(false);
+        this.refreshCompletedCheckout(status);
       },
       error: () => {
         this.hasRequestError.set(true);
         this.isLoading.set(false);
       },
     });
+  }
+
+  private refreshCompletedCheckout(status: CheckoutSnapshotStatusResponse): void {
+    if (status.status !== 'COMPLETED' || this.hasRefreshedCompletedCart) {
+      return;
+    }
+
+    this.hasRefreshedCompletedCart = true;
+    this.checkoutService.clearCheckout();
+    this.cartService.getCart().subscribe({ error: () => undefined });
   }
 }

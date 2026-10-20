@@ -117,6 +117,14 @@ describe('app routes', () => {
     expect(harness.routeNativeElement?.textContent).toContain('Estamos procesando tu pago');
   });
 
+  it('loads CheckoutComponent at /checkout/confirmation', async () => {
+    const harness = await RouterTestingHarness.create();
+
+    await harness.navigateByUrl('/checkout/confirmation', CheckoutComponent);
+
+    expect(harness.routeNativeElement).not.toBeNull();
+  });
+
   it('loads AccountComponent at /account', async () => {
     const harness = await RouterTestingHarness.create();
 
