@@ -28,6 +28,23 @@ nav {
   gap: 1rem;
 }
 
+.profile-menu {
+  position: relative;
+}
+
+.profile-menu-content {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  display: grid;
+  min-width: max-content;
+  padding: 0.5rem;
+  gap: 0.25rem;
+  background: white;
+  border: 1px solid #ddd;
+}
+
 .logout-overlay {
   position: fixed;
   inset: 0;

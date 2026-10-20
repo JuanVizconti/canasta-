@@ -2,12 +2,28 @@
   <a class="brand" routerLink="/">Canasta</a>
 
   <nav aria-label="Navegación principal">
-    @if (isAuthenticated()) {
-      <a routerLink="/account">Mi cuenta</a>
-      <button type="button" (click)="openLogoutConfirmation()">Salir</button>
-    } @else {
-      <button type="button" (click)="goToLogin()">Ingresar</button>
-    }
+    <div class="profile-menu">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        [attr.aria-expanded]="isProfileMenuOpen()"
+        (click)="toggleProfileMenu()"
+      >
+        Mi perfil 
+      </button>
+
+      @if (isProfileMenuOpen()) {
+        <div class="profile-menu-content" role="menu">
+          @if (isAuthenticated()) {
+            <button type="button" role="menuitem" (click)="goToAccount()">Perfil</button>
+            <button type="button" role="menuitem" (click)="openLogoutConfirmation()">Salir</button>
+          } @else {
+            <button type="button" role="menuitem" (click)="goToLogin()">Ingresar</button>
+            <button type="button" role="menuitem" (click)="goToRegister()">Regístrate</button>
+          }
+        </div>
+      }
+    </div>
 
     @if (isCheckoutOrPedido()) {
       <button type="button" (click)="goHome()">Volver al inicio</button>

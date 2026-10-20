@@ -98,42 +98,115 @@ describe('App', () => {
     });
   });
 
-  it('creates the app and shows login when there is no session', () => {
+  const findButton = (element: HTMLElement, label: string): HTMLButtonElement =>
+    Array.from(element.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === label,
+    ) as HTMLButtonElement;
+
+  it('always shows Mi perfil when there is no session', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
 
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.textContent).toContain('Canasta');
-    expect(compiled.textContent).toContain('Ingresar');
+    expect(compiled.textContent).toContain('Mi perfil');
+    expect(Array.from(compiled.querySelectorAll('button')).map((button) => button.textContent?.trim()))
+      .not.toContain('Ingresar');
   });
 
-  it('shows logout when there is an active session', () => {
+  it('shows Perfil and Salir in the authenticated dropdown', () => {
     authenticatedState.set(true);
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
 
+    findButton(fixture.nativeElement, 'Mi perfil ▼').click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Perfil');
     expect(fixture.nativeElement.textContent).toContain('Salir');
+    expect(fixture.nativeElement.textContent).not.toContain('Ingresar');
+    expect(fixture.nativeElement.textContent).not.toContain('Regístrate');
   });
 
-  it('shows Mi cuenta when there is an active session', () => {
-    authenticatedState.set(true);
+  it('shows Ingresar and Regístrate in the unauthenticated dropdown', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
 
-    const accountLink = fixture.nativeElement.querySelector('[routerlink="/account"]') as HTMLAnchorElement;
-    expect(accountLink.textContent).toContain('Mi cuenta');
+    findButton(fixture.nativeElement, 'Mi perfil ▼').click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Ingresar');
+    expect(fixture.nativeElement.textContent).toContain('Regístrate');
+    expect(fixture.nativeElement.textContent).not.toContain('Perfil');
+    expect(fixture.nativeElement.textContent).not.toContain('Salir');
   });
 
-  it('navigates to account from the authenticated header link', async () => {
+  it('navigates to account from the authenticated dropdown', async () => {
     authenticatedState.set(true);
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
     fixture.detectChanges();
 
-    (fixture.nativeElement.querySelector('[routerlink="/account"]') as HTMLAnchorElement).click();
+    findButton(fixture.nativeElement, 'Mi perfil ▼').click();
+    fixture.detectChanges();
+    findButton(fixture.nativeElement, 'Perfil').click();
     await fixture.whenStable();
 
     expect(router.url).toBe('/account');
+    expect(fixture.componentInstance.isProfileMenuOpen()).toBe(false);
+  });
+
+  it('opens Login through OverlayService and closes the dropdown', () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    findButton(fixture.nativeElement, 'Mi perfil ▼').click();
+    fixture.detectChanges();
+    findButton(fixture.nativeElement, 'Ingresar').click();
+    fixture.detectChanges();
+
+    expect(overlayService.activeOverlay()).toBe('login');
+    expect(fixture.componentInstance.isProfileMenuOpen()).toBe(false);
+  });
+
+  it('opens Register through OverlayService and closes the dropdown', () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    findButton(fixture.nativeElement, 'Mi perfil ▼').click();
+    fixture.detectChanges();
+    findButton(fixture.nativeElement, 'Regístrate').click();
+    fixture.detectChanges();
+
+    expect(overlayService.activeOverlay()).toBe('register');
+    expect(fixture.componentInstance.isProfileMenuOpen()).toBe(false);
+  });
+
+  it('opens and closes the profile dropdown from its button and an outside click', () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    findButton(fixture.nativeElement, 'Mi perfil ▼').click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.isProfileMenuOpen()).toBe(true);
+
+    document.body.click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.isProfileMenuOpen()).toBe(false);
+  });
+
+  it('reacts to authentication changes without reloading', () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    findButton(fixture.nativeElement, 'Mi perfil ▼').click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Ingresar');
+
+    authenticatedState.set(true);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Perfil');
+    expect(fixture.nativeElement.textContent).toContain('Salir');
   });
 
   it('logs out and navigates home from the header', async () => {
@@ -146,6 +219,20 @@ describe('App', () => {
 
     expect(logoutCalls).toBe(1);
     expect(router.url).toBe('/');
+  });
+
+  it('opens the existing logout confirmation from the authenticated dropdown', () => {
+    authenticatedState.set(true);
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    findButton(fixture.nativeElement, 'Mi perfil ▼').click();
+    fixture.detectChanges();
+    findButton(fixture.nativeElement, 'Salir').click();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.showLogoutConfirmation()).toBe(true);
+    expect(fixture.componentInstance.isProfileMenuOpen()).toBe(false);
   });
 
   it('keeps the header and router outlet without rendering an inactive overlay', () => {
@@ -278,21 +365,4 @@ describe('App', () => {
     expect(fixture.nativeElement.textContent).toContain('Ver carrito');
   });
 
-  it('opens Login as an overlay from the header without navigating to /login', async () => {
-    const fixture = TestBed.createComponent(App);
-    const router = TestBed.inject(Router);
-    await router.navigateByUrl('/');
-    fixture.detectChanges();
-
-    const loginButton = Array.from(
-      fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>,
-    ).find((button) => button.textContent?.trim() === 'Ingresar') as HTMLButtonElement;
-    loginButton.click();
-    fixture.detectChanges();
-
-    expect(overlayService.activeOverlay()).toBe('login');
-    expect(fixture.nativeElement.querySelector('app-login')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('router-outlet')).not.toBeNull();
-    expect(router.url).toBe('/');
-  });
 });
