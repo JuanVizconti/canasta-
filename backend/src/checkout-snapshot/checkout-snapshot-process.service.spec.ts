@@ -150,7 +150,6 @@ describe('CheckoutSnapshotProcessService', () => {
         deliveryFee: new Prisma.Decimal('2500.00'),
         total: new Prisma.Decimal('28000.00'),
         estado: PedidoEstado.CONFIRMED,
-        expiresAt: new Date('2026-10-13T18:30:00.000Z'),
       },
       select: { id: true },
     });
@@ -180,8 +179,6 @@ describe('CheckoutSnapshotProcessService', () => {
         method: PaymentMethod.MERCADO_PAGO,
         status: PaymentStatus.APPROVED,
         providerOrderId: 'mp-order-20',
-        checkoutUrl: 'https://mercadopago.example/checkout/20',
-        idempotencyKey: 'snapshot-key-20',
       },
     });
     expect(transaction.cartItem.deleteMany).toHaveBeenCalledWith({
@@ -221,7 +218,7 @@ describe('CheckoutSnapshotProcessService', () => {
     });
   });
 
-  it('copies nullable provider metadata from the snapshot without generating a new key', async () => {
+  it('does not copy checkout-attempt metadata from the snapshot into the payment', async () => {
     const snapshot = activeSnapshot({
       providerOrderId: null,
       checkoutUrl: null,
@@ -232,11 +229,12 @@ describe('CheckoutSnapshotProcessService', () => {
     await service.processApprovedOrder(approvedOrder());
 
     expect(transaction.payment.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
+      data: {
+        pedidoId: 91,
+        method: PaymentMethod.MERCADO_PAGO,
+        status: PaymentStatus.APPROVED,
         providerOrderId: 'mp-order-20',
-        checkoutUrl: null,
-        idempotencyKey: null,
-      }),
+      },
     });
   });
 

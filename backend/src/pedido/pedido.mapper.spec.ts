@@ -23,7 +23,6 @@ describe('PedidoMapper', () => {
     total: new Prisma.Decimal('22500'),
     estado: PedidoEstado.CONFIRMED,
     createdAt: new Date('2026-09-28T18:30:00.000Z'),
-    expiresAt: null,
     items: [{
       id: 1,
       pedidoId: 27,
@@ -39,8 +38,6 @@ describe('PedidoMapper', () => {
       method: PaymentMethod.CASH,
       status: PaymentStatus.PENDING,
       providerOrderId: null,
-      idempotencyKey: null,
-      checkoutUrl: null,
       createdAt: new Date('2026-09-28T18:30:00.000Z'),
       updatedAt: new Date('2026-09-28T18:30:00.000Z'),
     },

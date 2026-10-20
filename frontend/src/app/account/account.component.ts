@@ -51,7 +51,6 @@ export class AccountComponent implements OnInit {
 
   pedidoStatusLabel(estado: PedidoEstado): string {
     return {
-      PENDING: 'Pendiente',
       CONFIRMED: 'Confirmado',
       IN_PROGRESS: 'En preparación',
       FINISHED: 'Finalizado',

@@ -1,5 +1,4 @@
 export type PedidoEstado =
-  | 'PENDING'
   | 'CONFIRMED'
   | 'IN_PROGRESS'
   | 'FINISHED'
@@ -12,7 +11,6 @@ export type PedidoPaymentMethod = 'CASH' | 'MERCADO_PAGO';
 export type PedidoPaymentStatus =
   | 'PENDING'
   | 'APPROVED'
-  | 'REJECTED'
   | 'CANCELLED'
   | 'REFUNDED'
   | 'PARTIALLY_REFUNDED';

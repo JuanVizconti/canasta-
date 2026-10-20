@@ -68,7 +68,6 @@ export class PedidoComponent implements OnInit {
 
   pedidoStatusLabel(estado: PedidoEstado): string {
     return {
-      PENDING: 'Pendiente',
       CONFIRMED: 'Confirmado',
       IN_PROGRESS: 'En preparación',
       FINISHED: 'Finalizado',
@@ -84,7 +83,6 @@ export class PedidoComponent implements OnInit {
     return {
       PENDING: 'Pendiente',
       APPROVED: 'Aprobado',
-      REJECTED: 'Rechazado',
       CANCELLED: 'Cancelado',
       REFUNDED: 'Reembolsado',
       PARTIALLY_REFUNDED: 'Reembolsado parcialmente',

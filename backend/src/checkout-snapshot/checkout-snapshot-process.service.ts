@@ -16,9 +16,6 @@ const snapshotForApprovalSelect = {
   userId: true,
   status: true,
   providerOrderId: true,
-  checkoutUrl: true,
-  idempotencyKey: true,
-  expiresAt: true,
   nombre: true,
   apellido: true,
   dni: true,
@@ -138,7 +135,6 @@ export class CheckoutSnapshotProcessService implements OnModuleDestroy {
           deliveryFee: currentSnapshot.deliveryFee,
           total: currentSnapshot.total,
           estado: PedidoEstado.CONFIRMED,
-          expiresAt: currentSnapshot.expiresAt,
         },
         select: { id: true },
       });
@@ -160,8 +156,6 @@ export class CheckoutSnapshotProcessService implements OnModuleDestroy {
           method: PaymentMethod.MERCADO_PAGO,
           status: PaymentStatus.APPROVED,
           providerOrderId: order.providerOrderId,
-          checkoutUrl: currentSnapshot.checkoutUrl,
-          idempotencyKey: currentSnapshot.idempotencyKey,
         },
       });
 
