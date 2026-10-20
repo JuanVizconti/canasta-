@@ -1,5 +1,4 @@
 export type PedidoEstado =
-  | 'PENDING'
   | 'CONFIRMED'
   | 'IN_PROGRESS'
   | 'FINISHED'
@@ -12,8 +11,9 @@ export type PedidoPaymentMethod = 'CASH' | 'MERCADO_PAGO';
 export type PedidoPaymentStatus =
   | 'PENDING'
   | 'APPROVED'
-  | 'REJECTED'
-  | 'CANCELLED';
+  | 'CANCELLED'
+  | 'REFUNDED'
+  | 'PARTIALLY_REFUNDED';
 
 export interface PedidoAddress {
   calle: string | null;
@@ -40,7 +40,6 @@ export interface PedidoItem {
 export interface PedidoPayment {
   method: PedidoPaymentMethod;
   status: PedidoPaymentStatus;
-  checkoutUrl: string | null;
 }
 
 export interface Pedido {
@@ -67,18 +66,4 @@ export interface PedidoSummary {
   createdAt: string;
   total: string;
   estado: PedidoEstado;
-}
-
-export interface RetryPaymentResponse {
-  id: number;
-  estado: PedidoEstado;
-  total: string;
-  payment: {
-    method: 'MERCADO_PAGO';
-    status: 'PENDING';
-    checkoutUrl: string | null;
-  };
-  paymentInitialization: {
-    status: 'READY' | 'FAILED';
-  };
 }

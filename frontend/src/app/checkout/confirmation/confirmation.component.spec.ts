@@ -10,6 +10,7 @@ import { PedidoQuote } from '../../pedido/model/pedido-quote.interface';
 import { PedidoService } from '../../pedido/service/pedido.service';
 import { CheckoutData } from '../model/checkout.interface';
 import { CheckoutService } from '../service/checkout.service';
+import { CheckoutPaymentService } from '../service/checkout-payment.service';
 import { ConfirmationComponent } from './confirmation.component';
 
 describe('ConfirmationComponent', () => {
@@ -20,6 +21,8 @@ describe('ConfirmationComponent', () => {
   let quoteResponse: Observable<PedidoQuote>;
   let createResponse: Observable<CreatedPedido>;
   let createCalls: unknown[];
+  let initializeMercadoPagoResponse: Observable<{ checkoutUrl: string }>;
+  let initializeMercadoPagoCalls: unknown[];
   let refreshedCart: Cart | undefined;
   let navigatedTo: unknown[] | undefined;
   let navigationExtras: unknown;
@@ -70,6 +73,10 @@ describe('ConfirmationComponent', () => {
     quoteCalls = [];
     quoteResponse = of(quote);
     createCalls = [];
+    initializeMercadoPagoCalls = [];
+    initializeMercadoPagoResponse = of({
+      checkoutUrl: 'https://mercadopago.example/checkout/20',
+    });
     refreshedCart = undefined;
     navigatedTo = undefined;
     navigationExtras = undefined;
@@ -77,7 +84,7 @@ describe('ConfirmationComponent', () => {
       id: 27,
       estado: 'CONFIRMED',
       total: '22500.00',
-      payment: { method: 'CASH', status: 'PENDING', checkoutUrl: null },
+      payment: { method: 'CASH', status: 'PENDING' },
     });
 
     await TestBed.configureTestingModule({
@@ -104,6 +111,15 @@ describe('ConfirmationComponent', () => {
               const emptyCart = { id: 1, price: '0.00', items: [] };
               refreshedCart = emptyCart;
               return of(emptyCart);
+            },
+          },
+        },
+        {
+          provide: CheckoutPaymentService,
+          useValue: {
+            initializeMercadoPago: (request: unknown) => {
+              initializeMercadoPagoCalls.push(request);
+              return initializeMercadoPagoResponse;
             },
           },
         },
@@ -221,32 +237,22 @@ describe('ConfirmationComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Pedido creado correctamente');
   });
 
-  it('shows only Ir a pagar for MERCADO_PAGO and does not create a pedido', () => {
+  it('shows only Ir a pagar for MERCADO_PAGO and does not create a pedido before confirmation', () => {
     createComponent();
 
     expect(fixture.nativeElement.textContent).toContain('Ir a pagar');
     expect(fixture.nativeElement.textContent).not.toContain('Confirmar pedido');
     expect(createCalls).toEqual([]);
+    expect(initializeMercadoPagoCalls).toEqual([]);
   });
 
-  it('creates a Mercado Pago pedido and redirects when the payment link is ready', () => {
-    createResponse = of({
-      id: 27,
-      estado: 'PENDING',
-      total: '22500.00',
-      payment: {
-        method: 'MERCADO_PAGO',
-        status: 'PENDING',
-        checkoutUrl: 'https://mercadopago.example/checkout/27',
-      },
-      paymentInitialization: { status: 'READY' },
-    });
+  it('initializes Mercado Pago from checkout data and redirects without creating a pedido', () => {
     createComponent();
     const redirect = vi.spyOn(component, 'redirectToCheckout').mockImplementation(() => undefined);
 
     component.confirmMercadoPagoOrder();
 
-    expect(createCalls).toEqual([{
+    expect(initializeMercadoPagoCalls).toEqual([{
       personalInfo: checkoutData().personalInfo,
       delivery: {
         method: 'DELIVERY',
@@ -257,52 +263,36 @@ describe('ConfirmationComponent', () => {
           codigoPostal: '1000',
         },
       },
-      paymentMethod: 'MERCADO_PAGO',
     }]);
-    expect(refreshedCart).toEqual({ id: 1, price: '0.00', items: [] });
-    expect(redirect).toHaveBeenCalledWith('https://mercadopago.example/checkout/27');
+    expect(createCalls).toEqual([]);
+    expect(refreshedCart).toBeUndefined();
+    expect(redirect).toHaveBeenCalledWith('https://mercadopago.example/checkout/20');
     expect(navigatedTo).toBeUndefined();
   });
 
-  it('navigates to the persisted pedido when Mercado Pago does not return a payment link', () => {
-    createResponse = of({
-      id: 27,
-      estado: 'PENDING',
-      total: '22500.00',
-      payment: { method: 'MERCADO_PAGO', status: 'PENDING', checkoutUrl: null },
-      paymentInitialization: { status: 'FAILED' },
-    });
+  it('keeps checkout open when Mercado Pago initialization fails', () => {
+    initializeMercadoPagoResponse = throwError(() => ({ error: { code: 'INSUFFICIENT_STOCK' } }));
     createComponent();
     const redirect = vi.spyOn(component, 'redirectToCheckout').mockImplementation(() => undefined);
 
     component.confirmMercadoPagoOrder();
 
-    expect(createCalls).toHaveLength(1);
+    expect(initializeMercadoPagoCalls).toHaveLength(1);
+    expect(createCalls).toEqual([]);
     expect(redirect).not.toHaveBeenCalled();
-    expect(navigatedTo).toEqual(['/pedidos', 27]);
-    expect(navigationExtras).toEqual({ state: { paymentLinkError: true } });
-  });
-
-  it('keeps checkout open when creating the Mercado Pago pedido fails', () => {
-    createResponse = throwError(() => ({ error: { code: 'INSUFFICIENT_STOCK' } }));
-    createComponent();
-    const redirect = vi.spyOn(component, 'redirectToCheckout').mockImplementation(() => undefined);
-
-    component.confirmMercadoPagoOrder();
-
     expect(component.creationErrorMessage()).toContain('stock suficiente');
     expect(navigatedTo).toBeUndefined();
-    expect(redirect).not.toHaveBeenCalled();
   });
 
-  it('prevents duplicate Mercado Pago pedido creation while submitting', () => {
-    createResponse = new Subject<CreatedPedido>();
+  it('prevents duplicate Mercado Pago initialization while submitting', () => {
+    initializeMercadoPagoResponse = new Subject<{ checkoutUrl: string }>();
     createComponent();
 
     component.confirmMercadoPagoOrder();
     component.confirmMercadoPagoOrder();
 
-    expect(createCalls).toHaveLength(1);
+    expect(initializeMercadoPagoCalls).toHaveLength(1);
+    expect(createCalls).toEqual([]);
     expect(component.isSubmitting()).toBe(true);
   });
 

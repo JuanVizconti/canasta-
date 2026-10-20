@@ -7,6 +7,8 @@ import { AuthService } from './auth/service/auth.service';
 import { AccountComponent } from './account/account.component';
 import { CartService } from './cart/service/cart.service';
 import { CheckoutComponent } from './checkout/checkout.component';
+import { CheckoutSuccessComponent } from './checkout/success/checkout-success.component';
+import { CheckoutPaymentService } from './checkout/service/checkout-payment.service';
 import { CheckoutService } from './checkout/service/checkout.service';
 import { PedidoComponent } from './pedido/pedido.component';
 import { PedidoService } from './pedido/service/pedido.service';
@@ -53,6 +55,12 @@ describe('app routes', () => {
           },
         },
         {
+          provide: CheckoutPaymentService,
+          useValue: {
+            getSnapshotStatus: () => of({ status: 'ACTIVE', pedidoId: null }),
+          },
+        },
+        {
           provide: PedidoService,
           useValue: {
             getPedidos: () => of([]),
@@ -67,7 +75,7 @@ describe('app routes', () => {
               serviceFee: '500.00',
               deliveryFee: '0.00',
               total: '20500.00',
-              payment: { method: 'CASH', status: 'PENDING', checkoutUrl: null },
+              payment: { method: 'CASH', status: 'PENDING' },
             }),
           },
         },
@@ -99,6 +107,22 @@ describe('app routes', () => {
     await harness.navigateByUrl('/checkout', CheckoutComponent);
 
     expect(harness.routeNativeElement?.textContent).toContain('Revisá tu carrito');
+  });
+
+  it('loads CheckoutSuccessComponent at /checkout/success', async () => {
+    const harness = await RouterTestingHarness.create();
+
+    await harness.navigateByUrl('/checkout/success?snapshotId=15', CheckoutSuccessComponent);
+
+    expect(harness.routeNativeElement?.textContent).toContain('Estamos procesando tu pago');
+  });
+
+  it('loads CheckoutComponent at /checkout/confirmation', async () => {
+    const harness = await RouterTestingHarness.create();
+
+    await harness.navigateByUrl('/checkout/confirmation', CheckoutComponent);
+
+    expect(harness.routeNativeElement).not.toBeNull();
   });
 
   it('loads AccountComponent at /account', async () => {

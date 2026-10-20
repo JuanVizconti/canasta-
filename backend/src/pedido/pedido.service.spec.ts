@@ -1,14 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import { PaymentMethod, PaymentStatus, PedidoEstado, Prisma } from '@prisma/client';
 import { CartService } from '../cart/cart.service';
-import { MercadoPagoService } from '../mercado-pago/mercado-pago.service';
-import { MercadoPagoOrderDetails } from '../mercado-pago/mercado-pago.types';
 import { CreatePedidoDto } from './dto/create-pedido.dto';
 import { QuotePedidoDto } from './dto/quote-pedido.dto';
 import { DeliveryMethod } from './interfaces/delivery-method.enum';
 import { PedidoErrorCode } from './interfaces/pedido-error-code.enum';
 import { PedidoService } from './pedido.service';
-import { MercadoPagoOrderProcessService } from './mercado-pago-order-process.service';
 
 describe('PedidoService', () => {
   const createPedidoDto: CreatePedidoDto = {
@@ -32,24 +29,9 @@ describe('PedidoService', () => {
     const cartService = {
       getSubtotalForUser: jest.fn().mockResolvedValue(new Prisma.Decimal(subtotal)),
     } as unknown as CartService;
-    const mercadoPagoService = {
-      createOrder: jest.fn().mockResolvedValue({
-        providerOrderId: 'mp-order-27',
-        checkoutUrl: 'https://mercadopago.example/checkout/27',
-      }),
-    } as unknown as MercadoPagoService;
-    const mercadoPagoOrderProcessService = {
-      process: jest.fn().mockResolvedValue(undefined),
-    } as unknown as MercadoPagoOrderProcessService;
     return {
-      service: new PedidoService(
-        cartService,
-        mercadoPagoService,
-        mercadoPagoOrderProcessService,
-      ),
+      service: new PedidoService(cartService),
       cartService,
-      mercadoPagoService,
-      mercadoPagoOrderProcessService,
     };
   };
 
@@ -86,48 +68,47 @@ describe('PedidoService', () => {
     return { prisma, transaction };
   };
 
-  const retryPedido = (overrides: Record<string, unknown> = {}) => ({
-    id: 42,
-    estado: PedidoEstado.PENDING,
-    total: new Prisma.Decimal('44500.00'),
-    expiresAt: new Date(Date.now() + 20 * 60 * 1000),
-    createdAt: new Date(Date.now() - 10 * 60 * 1000),
-    user: { email: 'juan@email.com' },
+  const mercadoPagoPedido = (overrides: Record<string, unknown> = {}) => ({
+    id: 27,
+    estado: PedidoEstado.CONFIRMED,
     payment: {
+      id: 51,
       method: PaymentMethod.MERCADO_PAGO,
-      status: PaymentStatus.PENDING,
-      idempotencyKey: 'persisted-idempotency-key',
-      providerOrderId: null,
-      checkoutUrl: null,
+      status: PaymentStatus.APPROVED,
+      providerOrderId: 'mp-order-27',
     },
+    items: [
+      { productId: 4, cantidad: 2 },
+      { productId: 8, cantidad: 1 },
+    ],
     ...overrides,
   });
 
-  const configureRetryPrisma = (service: PedidoService, pedido = retryPedido()) => {
-    const prisma = {
+  const configureMercadoPagoRefundTransaction = (
+    service: PedidoService,
+    pedido = mercadoPagoPedido(),
+  ) => {
+    const transaction = {
       pedido: {
-        findFirst: jest.fn().mockResolvedValue(pedido),
-        create: jest.fn(),
+        findUnique: jest.fn().mockResolvedValue(pedido),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       payment: {
-        create: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      product: {
         update: jest.fn().mockResolvedValue({}),
       },
-      $transaction: jest.fn(),
+    };
+    const prisma = {
+      $transaction: jest.fn((callback: (client: typeof transaction) => unknown) =>
+        callback(transaction),
+      ),
     };
     (service as unknown as { prisma: typeof prisma }).prisma = prisma;
-    return prisma;
-  };
 
-  const approvedOrder = (
-    overrides: Partial<MercadoPagoOrderDetails> = {},
-  ): MercadoPagoOrderDetails => ({
-    providerOrderId: 'mp-order-approved',
-    externalReference: '24',
-    status: 'processed',
-    statusDetail: 'accredited',
-    ...overrides,
-  });
+    return { prisma, transaction };
+  };
 
   it('creates a confirmed CASH pedido from the real cart and clears that cart atomically', async () => {
     const { service } = createService();
@@ -175,112 +156,13 @@ describe('PedidoService', () => {
     }));
   });
 
-  it('creates a pending MERCADO_PAGO pedido, reserves stock and initializes the provider order after commit', async () => {
-    const { service, mercadoPagoService } = createService();
-    const pendingPedido = {
-      id: 42,
-      estado: PedidoEstado.PENDING,
-      total: new Prisma.Decimal('44500.00'),
-      user: { email: 'juan@email.com' },
-      items: [{ nombre: 'Arroz', marca: 'Canasta', cantidad: 2, unitPrice: new Prisma.Decimal('20000.00') }],
-      payment: { method: PaymentMethod.MERCADO_PAGO, status: PaymentStatus.PENDING, idempotencyKey: 'key-42' },
-    };
-    const { prisma, transaction } = configureTransaction(service, cartWithProduct(), 1, pendingPedido);
+  it('rejects MERCADO_PAGO because POST /pedidos only creates CASH pedidos', async () => {
+    const { service } = createService();
 
-    await expect(service.create(7, { ...createPedidoDto, paymentMethod: PaymentMethod.MERCADO_PAGO }))
-      .resolves.toEqual({
-        id: 42,
-        estado: PedidoEstado.PENDING,
-        total: '44500.00',
-        payment: {
-          method: PaymentMethod.MERCADO_PAGO,
-          status: PaymentStatus.PENDING,
-          checkoutUrl: 'https://mercadopago.example/checkout/27',
-        },
-        paymentInitialization: { status: 'READY' },
-      });
-
-    const createdData = transaction.pedido.create.mock.calls[0][0].data;
-    expect(createdData).toEqual(expect.objectContaining({
-      estado: PedidoEstado.PENDING,
-      expiresAt: expect.any(Date),
-      payment: {
-        create: expect.objectContaining({
-          method: PaymentMethod.MERCADO_PAGO,
-          status: PaymentStatus.PENDING,
-          providerOrderId: null,
-          checkoutUrl: null,
-          idempotencyKey: expect.any(String),
-        }),
-      },
-    }));
-    expect(transaction.product.updateMany).toHaveBeenCalledWith({
-      where: { id: 4, stock: { gte: 2 } }, data: { stock: { decrement: 2 } },
-    });
-    expect(transaction.cartItem.deleteMany).toHaveBeenCalledWith({ where: { cartId: 12 } });
-    expect(transaction.cart.update).toHaveBeenCalledWith({
-      where: { id: 12 }, data: { price: new Prisma.Decimal(0) },
-    });
-    expect(mercadoPagoService.createOrder).toHaveBeenCalledWith({
-      pedidoId: 42,
-      idempotencyKey: 'key-42',
-      total: '44500.00',
-      expirationTime: 'PT30M',
-      payerEmail: 'juan@email.com',
-    });
-    expect(prisma.payment.update).toHaveBeenCalledWith({
-      where: { pedidoId: 42 },
-      data: {
-        providerOrderId: 'mp-order-27',
-        checkoutUrl: 'https://mercadopago.example/checkout/27',
-      },
-    });
-  });
-
-  it('rolls back the local transaction and does not call Mercado Pago when stock is insufficient', async () => {
-    const { service, mercadoPagoService } = createService();
-    const pendingPedido = {
-      id: 42, estado: PedidoEstado.PENDING, total: new Prisma.Decimal('44500.00'),
-      user: { email: 'juan@email.com' }, items: [],
-      payment: { method: PaymentMethod.MERCADO_PAGO, status: PaymentStatus.PENDING, idempotencyKey: 'key-42' },
-    };
-    const { transaction } = configureTransaction(service, cartWithProduct(), 0, pendingPedido);
-
-    await expect(service.create(7, { ...createPedidoDto, paymentMethod: PaymentMethod.MERCADO_PAGO }))
-      .rejects.toMatchObject({ response: { code: PedidoErrorCode.INSUFFICIENT_STOCK } });
-
-    expect(transaction.pedido.create).toHaveBeenCalledTimes(1);
-    expect(mercadoPagoService.createOrder).not.toHaveBeenCalled();
-    expect(transaction.cartItem.deleteMany).not.toHaveBeenCalled();
-  });
-
-  it('keeps the pending pedido, reserved stock and cart when Mercado Pago fails after commit', async () => {
-    const { service, mercadoPagoService } = createService();
-    const pendingPedido = {
-      id: 42,
-      estado: PedidoEstado.PENDING,
-      total: new Prisma.Decimal('44500.00'),
-      user: { email: 'juan@email.com' },
-      items: [{ nombre: 'Arroz', marca: 'Canasta', cantidad: 2, unitPrice: new Prisma.Decimal('20000.00') }],
-      payment: { method: PaymentMethod.MERCADO_PAGO, status: PaymentStatus.PENDING, idempotencyKey: 'key-42' },
-    };
-    const { prisma, transaction } = configureTransaction(service, cartWithProduct(), 1, pendingPedido);
-    jest.spyOn(mercadoPagoService, 'createOrder').mockRejectedValue(new Error('provider unavailable'));
-
-    await expect(service.create(7, { ...createPedidoDto, paymentMethod: PaymentMethod.MERCADO_PAGO }))
-      .resolves.toEqual({
-        id: 42,
-        estado: PedidoEstado.PENDING,
-        total: '44500.00',
-        payment: { method: PaymentMethod.MERCADO_PAGO, status: PaymentStatus.PENDING, checkoutUrl: null },
-        paymentInitialization: { status: 'FAILED' },
-      });
-
-    expect(prisma.payment.update).not.toHaveBeenCalled();
-    expect(transaction.cartItem.deleteMany).toHaveBeenCalledWith({ where: { cartId: 12 } });
-    expect(transaction.cart.update).toHaveBeenCalledWith({
-      where: { id: 12 }, data: { price: new Prisma.Decimal(0) },
-    });
+    await expect(service.create(7, {
+      ...createPedidoDto,
+      paymentMethod: PaymentMethod.MERCADO_PAGO,
+    } as unknown as CreatePedidoDto)).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('does not create anything when the subtotal is below the minimum', async () => {
@@ -411,190 +293,131 @@ describe('PedidoService', () => {
     }));
   });
 
-  it('uses the same not-found contract for a missing or foreign pedido payment retry', async () => {
-    const { service, mercadoPagoService } = createService();
-    const prisma = configureRetryPrisma(service, null);
+  it('refunds a confirmed Mercado Pago pedido and restores every PedidoItem stock atomically', async () => {
+    const { service } = createService();
+    const { prisma, transaction } = configureMercadoPagoRefundTransaction(service);
 
-    await expect(service.retryMercadoPagoPayment(7, 42)).rejects.toMatchObject({
-      response: { statusCode: 404, code: PedidoErrorCode.PEDIDO_NOT_FOUND },
+    await expect(service.processMercadoPagoRefund(27, 'mp-order-27')).resolves.toBeUndefined();
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(transaction.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: 51, status: PaymentStatus.APPROVED },
+      data: { status: PaymentStatus.REFUNDED },
     });
-    expect(prisma.pedido.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 42, userId: 7 },
+    expect(transaction.pedido.updateMany).toHaveBeenCalledWith({
+      where: { id: 27, estado: PedidoEstado.CONFIRMED },
+      data: { estado: PedidoEstado.CANCELLED },
+    });
+    expect(transaction.product.update).toHaveBeenCalledWith({
+      where: { id: 4 },
+      data: { stock: { increment: 2 } },
+    });
+    expect(transaction.product.update).toHaveBeenCalledWith({
+      where: { id: 8 },
+      data: { stock: { increment: 1 } },
+    });
+  });
+
+  it('does not restore stock twice for an already refunded cancelled pedido', async () => {
+    const { service } = createService();
+    const { transaction } = configureMercadoPagoRefundTransaction(service, mercadoPagoPedido({
+      estado: PedidoEstado.CANCELLED,
+      payment: {
+        id: 51,
+        method: PaymentMethod.MERCADO_PAGO,
+        status: PaymentStatus.REFUNDED,
+        providerOrderId: 'mp-order-27',
+      },
     }));
-    expect(mercadoPagoService.createOrder).not.toHaveBeenCalled();
+
+    await expect(service.processMercadoPagoRefund(27, 'mp-order-27')).resolves.toBeUndefined();
+
+    expect(transaction.payment.updateMany).not.toHaveBeenCalled();
+    expect(transaction.pedido.updateMany).not.toHaveBeenCalled();
+    expect(transaction.product.update).not.toHaveBeenCalled();
+  });
+
+  it('uses the conditional payment transition to prevent duplicate concurrent stock restoration', async () => {
+    const { service } = createService();
+    const initialPedido = mercadoPagoPedido();
+    const refundedPedido = mercadoPagoPedido({
+      estado: PedidoEstado.CANCELLED,
+      payment: {
+        id: 51,
+        method: PaymentMethod.MERCADO_PAGO,
+        status: PaymentStatus.REFUNDED,
+        providerOrderId: 'mp-order-27',
+      },
+    });
+    const { transaction } = configureMercadoPagoRefundTransaction(service, initialPedido);
+    transaction.payment.updateMany.mockResolvedValueOnce({ count: 0 });
+    transaction.pedido.findUnique
+      .mockResolvedValueOnce(initialPedido)
+      .mockResolvedValueOnce(refundedPedido);
+
+    await expect(service.processMercadoPagoRefund(27, 'mp-order-27')).resolves.toBeUndefined();
+
+    expect(transaction.payment.updateMany).toHaveBeenCalledTimes(1);
+    expect(transaction.pedido.updateMany).not.toHaveBeenCalled();
+    expect(transaction.product.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects a provider order that does not match the persisted Mercado Pago payment', async () => {
+    const { service } = createService();
+    const { transaction } = configureMercadoPagoRefundTransaction(service);
+
+    await expect(service.processMercadoPagoRefund(27, 'mp-order-other'))
+      .rejects.toThrow('Mercado Pago order does not match pedido payment');
+
+    expect(transaction.payment.updateMany).not.toHaveBeenCalled();
+    expect(transaction.pedido.updateMany).not.toHaveBeenCalled();
+    expect(transaction.product.update).not.toHaveBeenCalled();
   });
 
   it.each([
-    ['pedido is not pending', retryPedido({ estado: PedidoEstado.CONFIRMED })],
-    ['payment is missing', retryPedido({ payment: null })],
-    ['payment method is CASH', retryPedido({ payment: { method: PaymentMethod.CASH, status: PaymentStatus.PENDING, idempotencyKey: 'key', providerOrderId: null, checkoutUrl: null } })],
-    ['payment status is not pending', retryPedido({ payment: { method: PaymentMethod.MERCADO_PAGO, status: PaymentStatus.APPROVED, idempotencyKey: 'key', providerOrderId: null, checkoutUrl: null } })],
-    ['idempotency key is missing', retryPedido({ payment: { method: PaymentMethod.MERCADO_PAGO, status: PaymentStatus.PENDING, idempotencyKey: null, providerOrderId: null, checkoutUrl: null } })],
-    ['expiration is missing', retryPedido({ expiresAt: null })],
-  ])('does not allow payment retry when %s', async (_description, pedido) => {
-    const { service, mercadoPagoService } = createService();
-    const prisma = configureRetryPrisma(service, pedido);
-
-    await expect(service.retryMercadoPagoPayment(7, 42)).rejects.toMatchObject({
-      response: { code: PedidoErrorCode.PAYMENT_RETRY_NOT_ALLOWED },
-    });
-    expect(mercadoPagoService.createOrder).not.toHaveBeenCalled();
-    expect(prisma.payment.update).not.toHaveBeenCalled();
-    expect(prisma.pedido.create).not.toHaveBeenCalled();
-    expect(prisma.payment.create).not.toHaveBeenCalled();
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-  });
-
-  it('does not call Mercado Pago when the pending pedido is expired', async () => {
-    const { service, mercadoPagoService } = createService();
-    const prisma = configureRetryPrisma(service, retryPedido({ expiresAt: new Date(Date.now() - 1) }));
-
-    await expect(service.retryMercadoPagoPayment(7, 42)).rejects.toMatchObject({
-      response: { code: PedidoErrorCode.PAYMENT_EXPIRED },
-    });
-    expect(mercadoPagoService.createOrder).not.toHaveBeenCalled();
-    expect(prisma.payment.update).not.toHaveBeenCalled();
-    expect(prisma.pedido.create).not.toHaveBeenCalled();
-    expect(prisma.payment.create).not.toHaveBeenCalled();
-  });
-
-  it('returns an existing checkout URL without calling Mercado Pago again', async () => {
-    const { service, mercadoPagoService } = createService();
-    const prisma = configureRetryPrisma(service, retryPedido({
+    ['missing pedido', null],
+    ['missing payment', mercadoPagoPedido({ payment: null })],
+    ['non-Mercado Pago payment', mercadoPagoPedido({
       payment: {
-        method: PaymentMethod.MERCADO_PAGO,
-        status: PaymentStatus.PENDING,
-        idempotencyKey: 'persisted-idempotency-key',
-        providerOrderId: 'mp-order-42',
-        checkoutUrl: 'https://mercadopago.example/checkout/42',
+        id: 51,
+        method: PaymentMethod.CASH,
+        status: PaymentStatus.APPROVED,
+        providerOrderId: null,
       },
-    }));
-
-    await expect(service.retryMercadoPagoPayment(7, 42)).resolves.toEqual({
-      id: 42,
-      estado: PedidoEstado.PENDING,
-      total: '44500.00',
+    })],
+    ['incompatible states', mercadoPagoPedido({
+      estado: PedidoEstado.CANCELLED,
       payment: {
+        id: 51,
         method: PaymentMethod.MERCADO_PAGO,
-        status: PaymentStatus.PENDING,
-        checkoutUrl: 'https://mercadopago.example/checkout/42',
-      },
-      paymentInitialization: { status: 'READY' },
-    });
-    expect(mercadoPagoService.createOrder).not.toHaveBeenCalled();
-    expect(prisma.payment.update).not.toHaveBeenCalled();
-    expect(prisma.pedido.create).not.toHaveBeenCalled();
-    expect(prisma.payment.create).not.toHaveBeenCalled();
-  });
-
-  it('uses a new idempotency key and creates a new Mercado Pago order when checkout URL is absent', async () => {
-    jest.useFakeTimers();
-    jest.setSystemTime(new Date('2026-10-01T13:10:00.000Z'));
-    const { service, mercadoPagoService } = createService();
-    const prisma = configureRetryPrisma(service, retryPedido({
-      createdAt: new Date('2026-10-01T13:00:00.000Z'),
-      expiresAt: new Date('2026-10-01T13:30:00.000Z'),
-      payment: {
-        method: PaymentMethod.MERCADO_PAGO,
-        status: PaymentStatus.PENDING,
-        idempotencyKey: 'persisted-idempotency-key',
-        providerOrderId: 'mp-order-42',
-        checkoutUrl: null,
-      },
-    }));
-
-    await expect(service.retryMercadoPagoPayment(7, 42)).resolves.toMatchObject({
-      id: 42,
-      estado: PedidoEstado.PENDING,
-      payment: { checkoutUrl: 'https://mercadopago.example/checkout/27' },
-      paymentInitialization: { status: 'READY' },
-    });
-
-    const newIdempotencyKey = prisma.payment.update.mock.calls[0][0].data.idempotencyKey;
-    expect(newIdempotencyKey).toEqual(expect.any(String));
-    expect(newIdempotencyKey).not.toBe('persisted-idempotency-key');
-    expect(mercadoPagoService.createOrder).toHaveBeenCalledWith({
-      pedidoId: 42,
-      idempotencyKey: newIdempotencyKey,
-      total: '44500.00',
-      expirationTime: 'PT20M',
-      payerEmail: 'juan@email.com',
-    });
-    expect(prisma.payment.update).toHaveBeenCalledWith({
-      where: { pedidoId: 42 },
-      data: { idempotencyKey: newIdempotencyKey },
-    });
-    expect(prisma.payment.update).toHaveBeenCalledWith({
-      where: { pedidoId: 42 },
-      data: {
+        status: PaymentStatus.APPROVED,
         providerOrderId: 'mp-order-27',
-        checkoutUrl: 'https://mercadopago.example/checkout/27',
       },
-    });
-    expect(prisma.pedido.create).not.toHaveBeenCalled();
-    expect(prisma.payment.create).not.toHaveBeenCalled();
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-    jest.useRealTimers();
-  });
+    })],
+  ])('rejects %s without mutating payment, pedido, or stock', async (_name, pedido) => {
+    const { service } = createService();
+    const { transaction } = configureMercadoPagoRefundTransaction(service, pedido as never);
 
-  it('keeps the retry pending, with its new key and no checkout URL, when Mercado Pago creation fails', async () => {
-    const { service, mercadoPagoService } = createService();
-    const prisma = configureRetryPrisma(service);
-    jest.spyOn(mercadoPagoService, 'createOrder').mockRejectedValue(new Error('provider unavailable'));
-
-    await expect(service.retryMercadoPagoPayment(7, 42)).resolves.toEqual({
-      id: 42,
-      estado: PedidoEstado.PENDING,
-      total: '44500.00',
-      payment: { method: PaymentMethod.MERCADO_PAGO, status: PaymentStatus.PENDING, checkoutUrl: null },
-      paymentInitialization: { status: 'FAILED' },
-    });
-    expect(prisma.payment.update).toHaveBeenCalledTimes(1);
-    expect(prisma.payment.update.mock.calls[0][0]).toEqual({
-      where: { pedidoId: 42 },
-      data: { idempotencyKey: expect.any(String) },
-    });
-    expect(prisma.pedido.create).not.toHaveBeenCalled();
-    expect(prisma.payment.create).not.toHaveBeenCalled();
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-  });
-
-  it('delegates an approved order using its numeric external reference', async () => {
-    const { service, mercadoPagoOrderProcessService } = createService();
-    const order = approvedOrder();
-
-    await expect(service.processMercadoPagoOrder(order)).resolves.toBeUndefined();
-
-    expect(mercadoPagoOrderProcessService.process).toHaveBeenCalledWith(
-      'APPROVED',
-      24,
-      order,
+    await expect(service.processMercadoPagoRefund(27, 'mp-order-27')).rejects.toBeInstanceOf(
+      Error,
     );
+
+    expect(transaction.payment.updateMany).not.toHaveBeenCalled();
+    expect(transaction.pedido.updateMany).not.toHaveBeenCalled();
+    expect(transaction.product.update).not.toHaveBeenCalled();
   });
 
-  it.each(['', 'abc', '24abc', '0', '-1'])
-  ('rejects an invalid external reference without delegating: %s', async (externalReference) => {
-    const { service, mercadoPagoOrderProcessService } = createService();
+  it.each([
+    ['payment transition', 'payment', 'updateMany'],
+    ['pedido cancellation', 'pedido', 'updateMany'],
+    ['stock restoration', 'product', 'update'],
+  ] as const)('propagates a %s failure so the refund transaction rolls back', async (_name, section, method) => {
+    const { service } = createService();
+    const { transaction } = configureMercadoPagoRefundTransaction(service);
+    const failure = new Error('database failure');
+    (transaction[section][method] as jest.Mock).mockRejectedValueOnce(failure);
 
-    await expect(service.processMercadoPagoOrder(approvedOrder({ externalReference })))
-      .rejects.toThrow('Mercado Pago order external reference is invalid');
-
-    expect(mercadoPagoOrderProcessService.process).not.toHaveBeenCalled();
-  });
-
-  it('does not delegate NO_ACTION or PARTIALLY_REFUNDED decisions', async () => {
-    const { service, mercadoPagoOrderProcessService } = createService();
-
-    await service.processMercadoPagoOrder(approvedOrder({
-      status: 'processing',
-      statusDetail: 'in_process',
-    }));
-    await service.processMercadoPagoOrder(approvedOrder({
-      status: 'processed',
-      statusDetail: 'partially_refunded',
-    }));
-
-    expect(mercadoPagoOrderProcessService.process).not.toHaveBeenCalled();
+    await expect(service.processMercadoPagoRefund(27, 'mp-order-27')).rejects.toThrow(failure);
   });
 
   it('quotes delivery using the cart subtotal and Decimal calculations', async () => {

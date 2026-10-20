@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsDefined, IsEnum, ValidateNested } from 'class-validator';
+import { IsDefined, IsIn, ValidateNested } from 'class-validator';
 import { PaymentMethod } from '@prisma/client';
 import { DeliveryDto } from './delivery.dto';
 import { PersonalInfoDto } from './personal-info.dto';
@@ -15,6 +15,6 @@ export class CreatePedidoDto {
   @Type(() => DeliveryDto)
   delivery: DeliveryDto;
 
-  @IsEnum(PaymentMethod)
-  paymentMethod: PaymentMethod;
+  @IsIn([PaymentMethod.CASH])
+  paymentMethod: 'CASH';
 }

@@ -52,7 +52,6 @@ export class PedidoMapper {
         ? {
           method: pedido.payment.method,
           status: pedido.payment.status,
-          checkoutUrl: pedido.payment.checkoutUrl,
         }
         : null,
     };
