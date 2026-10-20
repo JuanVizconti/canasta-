@@ -11,23 +11,22 @@
         <h3>{{ item.product.nombre }}</h3>
         <p>Marca: {{ item.product.marca }}</p>
         <p>Precio: ${{ item.product.precio }}</p>
-        <p>Cantidad: {{ item.cantidad }}</p>
         <div>
           <button
             type="button"
-            [disabled]="item.cantidad <= 1"
+            [disabled]="isProductPending(item.productId)"
             (click)="decreaseQuantity(item.productId, item.cantidad)"
           >
             -
           </button>
+          <span>{{ item.cantidad }}</span>
           <button
             type="button"
-            [disabled]="item.cantidad >= item.product.stock"
+            [disabled]="isProductPending(item.productId) || item.cantidad >= item.product.stock"
             (click)="increaseQuantity(item.productId, item.cantidad, item.product.stock)"
           >
             +
           </button>
-          <button type="button" (click)="removeItem(item.productId)">Eliminar</button>
         </div>
       </article>
     }

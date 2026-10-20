@@ -119,7 +119,7 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
 
-    findButton(fixture.nativeElement, 'Mi perfil ▼').click();
+    findButton(fixture.nativeElement, 'Mi perfil').click();
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('Perfil');
@@ -132,7 +132,7 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
 
-    findButton(fixture.nativeElement, 'Mi perfil ▼').click();
+    findButton(fixture.nativeElement, 'Mi perfil').click();
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('Ingresar');
@@ -147,7 +147,7 @@ describe('App', () => {
     const router = TestBed.inject(Router);
     fixture.detectChanges();
 
-    findButton(fixture.nativeElement, 'Mi perfil ▼').click();
+    findButton(fixture.nativeElement, 'Mi perfil').click();
     fixture.detectChanges();
     findButton(fixture.nativeElement, 'Perfil').click();
     await fixture.whenStable();
@@ -160,7 +160,7 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
 
-    findButton(fixture.nativeElement, 'Mi perfil ▼').click();
+    findButton(fixture.nativeElement, 'Mi perfil').click();
     fixture.detectChanges();
     findButton(fixture.nativeElement, 'Ingresar').click();
     fixture.detectChanges();
@@ -173,7 +173,7 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
 
-    findButton(fixture.nativeElement, 'Mi perfil ▼').click();
+    findButton(fixture.nativeElement, 'Mi perfil').click();
     fixture.detectChanges();
     findButton(fixture.nativeElement, 'Regístrate').click();
     fixture.detectChanges();
@@ -186,7 +186,7 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
 
-    findButton(fixture.nativeElement, 'Mi perfil ▼').click();
+    findButton(fixture.nativeElement, 'Mi perfil').click();
     fixture.detectChanges();
     expect(fixture.componentInstance.isProfileMenuOpen()).toBe(true);
 
@@ -199,7 +199,7 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
 
-    findButton(fixture.nativeElement, 'Mi perfil ▼').click();
+    findButton(fixture.nativeElement, 'Mi perfil').click();
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Ingresar');
 
@@ -226,7 +226,7 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
 
-    findButton(fixture.nativeElement, 'Mi perfil ▼').click();
+    findButton(fixture.nativeElement, 'Mi perfil').click();
     fixture.detectChanges();
     findButton(fixture.nativeElement, 'Salir').click();
     fixture.detectChanges();

@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { Cart } from '../../cart/model/cart.interface';
 import { CartService } from '../../cart/service/cart.service';
 import { CheckoutService } from '../service/checkout.service';
@@ -12,50 +12,54 @@ describe('CartReviewComponent', () => {
   let cartState: ReturnType<typeof signal<Cart | null>>;
   let updateItemCalls: Array<[number, number]>;
   let removeItemCalls: number[];
-  let savedCart: Cart | undefined;
+  let checkoutCartUpdates: Cart[];
 
-  const cart: Cart = {
+  const cartWithQuantity = (cantidad: number): Cart => ({
     id: 1,
-    price: '2500.50',
-    items: [
-      {
-        id: 10,
-        productId: 2,
-        cantidad: 2,
-        product: {
-          id: 2,
-          marca: 'Canasta',
-          nombre: 'Arroz',
-          precio: '1250.25',
-          stock: 4,
-          imgUrl: null,
-        },
-      },
-    ],
-  };
+    price: (1250.25 * cantidad).toFixed(2),
+    items: cantidad === 0
+      ? []
+      : [
+          {
+            id: 10,
+            productId: 2,
+            cantidad,
+            product: {
+              id: 2,
+              marca: 'Canasta',
+              nombre: 'Arroz',
+              precio: '1250.25',
+              stock: 4,
+              imgUrl: null,
+            },
+          },
+        ],
+  });
 
   beforeEach(async () => {
-    cartState = signal<Cart | null>(cart);
+    cartState = signal<Cart | null>(cartWithQuantity(2));
     updateItemCalls = [];
     removeItemCalls = [];
-    savedCart = undefined;
+    checkoutCartUpdates = [];
 
     const cartService = {
       cart: cartState.asReadonly(),
-      getCart: () => of(cart),
+      getCart: () => of(cartState() ?? cartWithQuantity(0)),
       updateItem: (productId: number, cantidad: number) => {
         updateItemCalls.push([productId, cantidad]);
-        return of(cart);
+        const updatedCart = cartWithQuantity(cantidad);
+        cartState.set(updatedCart);
+        return of(updatedCart);
       },
       removeItem: (productId: number) => {
         removeItemCalls.push(productId);
-        return of({ ...cart, items: [] });
+        const updatedCart = cartWithQuantity(0);
+        cartState.set(updatedCart);
+        return of(updatedCart);
       },
     };
     const checkoutService = {
-      updateCart: (value: Cart) => {
-        savedCart = value;
-      },
+      updateCart: (cart: Cart) => checkoutCartUpdates.push(cart),
     };
 
     await TestBed.configureTestingModule({
@@ -70,21 +74,23 @@ describe('CartReviewComponent', () => {
     component = fixture.componentInstance;
   });
 
-  it('shows the live cart from CartService', () => {
+  it('shows the live cart quantity and subtotal from CartService', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('Arroz');
+    expect(fixture.nativeElement.textContent).toContain('2');
     expect(fixture.nativeElement.textContent).toContain('Subtotal: $2500.50');
+    expect(fixture.nativeElement.textContent).not.toContain('Eliminar');
   });
 
   it('does not confirm an empty cart', () => {
-    cartState.set({ id: null, price: '0.00', items: [] });
+    cartState.set(cartWithQuantity(0));
     let completed = 0;
     component.completed.subscribe(() => completed++);
 
     component.confirmCart();
 
-    expect(savedCart).toBeUndefined();
+    expect(checkoutCartUpdates).toEqual([]);
     expect(completed).toBe(0);
   });
 
@@ -94,28 +100,70 @@ describe('CartReviewComponent', () => {
 
     component.confirmCart();
 
-    expect(savedCart).toBe(cart);
+    expect(checkoutCartUpdates).toEqual([cartWithQuantity(2)]);
     expect(completed).toBe(1);
   });
 
-  it('delegates quantity changes and removal to CartService', () => {
+  it('updates the real cart, subtotal, and checkout snapshot when increasing or decreasing', () => {
     component.increaseQuantity(2, 2, 4);
-    component.decreaseQuantity(2, 2);
-    component.removeItem(2);
+    component.decreaseQuantity(2, 3);
+    fixture.detectChanges();
 
     expect(updateItemCalls).toEqual([
       [2, 3],
-      [2, 1],
+      [2, 2],
     ]);
-    expect(removeItemCalls).toEqual([2]);
+    expect(checkoutCartUpdates).toEqual([cartWithQuantity(3), cartWithQuantity(2)]);
+    expect(fixture.nativeElement.textContent).toContain('Subtotal: $2500.50');
   });
 
-  it('always reflects the current live cart instead of an older snapshot', () => {
-    fixture.detectChanges();
-    cartState.set({ ...cart, price: '1250.25', items: [{ ...cart.items[0], cantidad: 1 }] });
+  it('removes an item when decreasing quantity one and prevents checkout when it was the last item', () => {
+    cartState.set(cartWithQuantity(1));
+    component.decreaseQuantity(2, 1);
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Cantidad: 1');
+    expect(removeItemCalls).toEqual([2]);
+    expect(checkoutCartUpdates).toEqual([cartWithQuantity(0)]);
+    expect(fixture.nativeElement.textContent).toContain('Tu carrito está vacío.');
+  });
+
+  it('does not increase or request above available stock', () => {
+    cartState.set(cartWithQuantity(4));
+    fixture.detectChanges();
+
+    const plusButton = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '+',
+    ) as HTMLButtonElement;
+    expect(plusButton.disabled).toBe(true);
+    component.increaseQuantity(2, 4, 4);
+    expect(updateItemCalls).toEqual([]);
+  });
+
+  it('prevents overlapping operations for the same item', () => {
+    const pendingResponse = new Subject<Cart>();
+    const cartService = TestBed.inject(CartService) as unknown as {
+      updateItem: (productId: number, cantidad: number) => Subject<Cart>;
+    };
+    cartService.updateItem = (productId, cantidad) => {
+      updateItemCalls.push([productId, cantidad]);
+      return pendingResponse;
+    };
+
+    component.increaseQuantity(2, 2, 4);
+    component.increaseQuantity(2, 2, 4);
+
+    expect(updateItemCalls).toEqual([[2, 3]]);
+    pendingResponse.next(cartWithQuantity(3));
+    pendingResponse.complete();
+    expect(component.isProductPending(2)).toBe(false);
+  });
+
+  it('always reflects the current live cart instead of an older checkout snapshot', () => {
+    fixture.detectChanges();
+    cartState.set(cartWithQuantity(1));
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('1');
     expect(fixture.nativeElement.textContent).toContain('Subtotal: $1250.25');
   });
 });

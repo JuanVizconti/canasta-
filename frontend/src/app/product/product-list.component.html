@@ -18,30 +18,33 @@
       @if (product.imgUrl) {
         <img [src]="product.imgUrl" [alt]="product.nombre" />
       }
-      <div>
+      @if (cartItemFor(product.id); as item) {
+        <div>
+          <button
+            type="button"
+            (click)="decreaseQuantity(product)"
+            [disabled]="isProductPending(product.id)"
+          >
+            -
+          </button>
+          <span>{{ item.cantidad }}</span>
+          <button
+            type="button"
+            (click)="increaseQuantity(product)"
+            [disabled]="isProductPending(product.id) || item.cantidad >= product.stock"
+          >
+            +
+          </button>
+        </div>
+      } @else {
         <button
           type="button"
-          (click)="decreaseQuantity(product.id)"
-          [disabled]="getSelectedQuantity(product.id) <= 1"
+          (click)="addToCart(product)"
+          [disabled]="isProductPending(product.id) || product.stock <= 0"
         >
-          -
+          + Agregar
         </button>
-        <span>{{ getSelectedQuantity(product.id) }}</span>
-        <button
-          type="button"
-          (click)="increaseQuantity(product)"
-          [disabled]="getSelectedQuantity(product.id) >= product.stock"
-        >
-          +
-        </button>
-      </div>
-      <button
-        type="button"
-        (click)="addToCart(product.id)"
-        [disabled]="product.stock <= 0"
-      >
-        Agregar al carrito
-      </button>
+      }
       <hr />
     </article>
   }

@@ -1,8 +1,11 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, effect, inject, OnInit, signal } from '@angular/core';
+import { Observable } from 'rxjs';
+import { AuthService } from '../auth/service/auth.service';
+import { Cart, CartItem } from '../cart/model/cart.interface';
+import { CartService } from '../cart/service/cart.service';
 import { Product } from './model/product.interface';
 import { ProductService } from './service/product.service';
-import { CartService } from '../cart/service/cart.service';
 
 @Component({
   selector: 'app-product-list',
@@ -10,15 +13,20 @@ import { CartService } from '../cart/service/cart.service';
   templateUrl: './product-list.component.html',
 })
 export class ProductListComponent implements OnInit {
-  products= signal<Product[]>([]);
-  errorMessage = signal('');
-  selectedQuantities = signal<Record<number,number>>({});
-  notificationMessage = signal('');
+  private readonly productService = inject(ProductService);
+  private readonly cartService = inject(CartService);
+  private readonly authService = inject(AuthService);
 
-  constructor(
-    private readonly productService: ProductService,
-    private readonly cartService: CartService,
-  ) {}
+  products = signal<Product[]>([]);
+  errorMessage = signal('');
+  notificationMessage = signal('');
+  private readonly pendingProductIds = signal<ReadonlySet<number>>(new Set());
+  readonly cart = this.cartService.cart;
+  private readonly loadCartOnAuthentication = effect(() => {
+    if (this.authService.isAuthenticated()) {
+      this.loadCart();
+    }
+  });
 
   ngOnInit(): void {
     this.productService.getProducts().subscribe({
@@ -29,63 +37,85 @@ export class ProductListComponent implements OnInit {
         this.errorMessage.set('No se pudieron cargar los productos.');
       },
     });
+
   }
 
-  getSelectedQuantity(productId: number): number {
-   return this.selectedQuantities()[productId] ?? 1;
+  cartItemFor(productId: number): CartItem | undefined {
+    if (!this.authService.isAuthenticated()) {
+      return undefined;
+    }
+
+    return this.cart()?.items.find((item) => item.productId === productId);
+  }
+
+  isProductPending(productId: number): boolean {
+    return this.pendingProductIds().has(productId);
+  }
+
+  addToCart(product: Product): void {
+    if (product.stock <= 0 || this.isProductPending(product.id)) {
+      return;
+    }
+
+    this.performCartOperation(product.id, () => this.cartService.addItem(product.id, 1), 'Producto agregado al carrito.');
   }
 
   increaseQuantity(product: Product): void {
-  const currentQuantity = this.getSelectedQuantity(product.id);
+    const item = this.cartItemFor(product.id);
 
-    if (currentQuantity >= product.stock) {
+    if (!item || item.cantidad >= product.stock || this.isProductPending(product.id)) {
       return;
     }
 
-    this.selectedQuantities.update((quantities) => ({
-      ...quantities,
-      [product.id]: currentQuantity + 1,
-    }));
+    this.performCartOperation(product.id, () => this.cartService.updateItem(product.id, item.cantidad + 1));
   }
 
-  decreaseQuantity(productId: number): void {
-  const currentQuantity = this.getSelectedQuantity(productId);
+  decreaseQuantity(product: Product): void {
+    const item = this.cartItemFor(product.id);
 
-    if (currentQuantity <= 1) {
+    if (!item || this.isProductPending(product.id)) {
       return;
     }
 
-    this.selectedQuantities.update((quantities) => ({
-      ...quantities,
-      [productId]: currentQuantity - 1,
-  }));
-}
+    if (item.cantidad === 1) {
+      this.performCartOperation(product.id, () => this.cartService.removeItem(product.id));
+      return;
+    }
 
-  addToCart(productId: number): void {
-    const cantidad = this.getSelectedQuantity(productId);
+    this.performCartOperation(product.id, () => this.cartService.updateItem(product.id, item.cantidad - 1));
+  }
 
+  private loadCart(): void {
+    this.cartService.getCart().subscribe({
+      error: () => this.errorMessage.set('No se pudo cargar el carrito.'),
+    });
+  }
+
+  private performCartOperation(
+    productId: number,
+    request: () => Observable<Cart>,
+    successMessage = 'Carrito actualizado.',
+  ): void {
     this.errorMessage.set('');
+    this.pendingProductIds.update((pending) => new Set(pending).add(productId));
 
-    this.cartService.addItem(productId, cantidad).subscribe({
+    request().subscribe({
       next: () => {
-        this.selectedQuantities.update((quantities) => ({
-          ...quantities,
-          [productId]: 1,
-        }));
-
-        this.notificationMessage.set('Producto agregado al carrito.');
-
-        setTimeout(() => {
-          this.notificationMessage.set('');
-        }, 2500);
+        this.notificationMessage.set(successMessage);
+        this.completeProductOperation(productId);
       },
       error: () => {
-        this.errorMessage.set('No se pudo agregar el producto al carrito.');
-
-        setTimeout(() => {
-          this.errorMessage.set('');
-        }, 2500);
+        this.errorMessage.set('No se pudo actualizar el carrito.');
+        this.completeProductOperation(productId);
       },
+    });
+  }
+
+  private completeProductOperation(productId: number): void {
+    this.pendingProductIds.update((pending) => {
+      const nextPending = new Set(pending);
+      nextPending.delete(productId);
+      return nextPending;
     });
   }
 }
