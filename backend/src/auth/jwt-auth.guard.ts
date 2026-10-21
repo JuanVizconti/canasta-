@@ -18,7 +18,11 @@ export class JwtAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const token = this.extractTokenFromHeader(request);
 
-    if (!token) {
+    if (token === null) {
+      throw this.nullSessionException();
+    }
+
+    if (token === undefined) {
       throw this.invalidSessionException();
     }
 
@@ -36,16 +40,36 @@ export class JwtAuthGuard implements CanActivate {
     }
   }
 
-  private extractTokenFromHeader(request: AuthenticatedRequest) {
+  private extractTokenFromHeader(
+    request: AuthenticatedRequest,
+  ): string | null | undefined {
     const authorization = request.headers.authorization;
 
     if (!authorization) {
-      return undefined;
+      return null;
     }
 
-    const [type, token, ...extra] = authorization.split(' ');
+    const normalizedAuthorization = authorization.trim();
+
+    if (!normalizedAuthorization) {
+      return null;
+    }
+
+    const [type, token, ...extra] = normalizedAuthorization.split(/\s+/);
+
+    if (type === 'Bearer' && !token) {
+      return null;
+    }
 
     return type === 'Bearer' && token && extra.length === 0 ? token : undefined;
+  }
+
+  private nullSessionException() {
+    return new UnauthorizedException({
+      statusCode: HttpStatus.UNAUTHORIZED,
+      code: AuthErrorCode.NULL_SESSION,
+      message: 'Unauthorized',
+    });
   }
 
   private invalidSessionException() {

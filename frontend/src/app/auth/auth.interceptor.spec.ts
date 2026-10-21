@@ -11,10 +11,12 @@ describe('authInterceptor', () => {
   let httpTesting: HttpTestingController;
   let logoutCalls: number;
   let overlayService: OverlayService;
+  let accessToken: string | null;
 
   beforeEach(() => {
     localStorage.clear();
     logoutCalls = 0;
+    accessToken = null;
 
     TestBed.configureTestingModule({
       providers: [
@@ -22,7 +24,10 @@ describe('authInterceptor', () => {
         provideHttpClientTesting(),
         {
           provide: AuthService,
-          useValue: { logout: () => logoutCalls++ },
+          useValue: {
+            getAccessToken: () => accessToken,
+            logout: () => logoutCalls++,
+          },
         },
         {
           provide: Router,
@@ -45,7 +50,7 @@ describe('authInterceptor', () => {
   });
 
   it('adds Authorization when an access token exists', () => {
-    localStorage.setItem('accessToken', 'jwt-token');
+    accessToken = 'jwt-token';
 
     http.get('/products').subscribe();
 
@@ -60,6 +65,20 @@ describe('authInterceptor', () => {
     const request = httpTesting.expectOne('/products');
     expect(request.request.headers.has('Authorization')).toBe(false);
     request.flush([]);
+  });
+
+  it('opens a normal Login overlay without logging out for NULL_SESSION', () => {
+    http.get('/cart').subscribe({ error: () => undefined });
+
+    httpTesting.expectOne('/cart').flush(
+      { code: 'NULL_SESSION', message: 'Unauthorized' },
+      { status: 401, statusText: 'Unauthorized' },
+    );
+
+    expect(logoutCalls).toBe(0);
+    expect(overlayService.activeOverlay()).toBe('login');
+    expect(overlayService.returnUrl()).toBe('/cart');
+    expect(overlayService.loginReason()).toBe('manual');
   });
 
   it('logs out and opens login with the current URL for INVALID_SESSION', () => {

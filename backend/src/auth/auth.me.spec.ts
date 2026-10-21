@@ -12,6 +12,11 @@ describe('GET /auth/me', () => {
   const authService = {
     getProfile: jest.fn(),
   };
+  const nullSessionResponse = {
+    statusCode: 401,
+    code: AuthErrorCode.NULL_SESSION,
+    message: 'Unauthorized',
+  };
   const invalidSessionResponse = {
     statusCode: 401,
     code: AuthErrorCode.INVALID_SESSION,
@@ -59,11 +64,19 @@ describe('GET /auth/me', () => {
     expect(authService.getProfile).toHaveBeenCalledWith(1);
   });
 
-  it('returns INVALID_SESSION when no token is sent', async () => {
+  it('returns NULL_SESSION when no token is sent', async () => {
     await request(app.getHttpServer())
       .get('/auth/me')
       .expect(401)
-      .expect(invalidSessionResponse);
+      .expect(nullSessionResponse);
+  });
+
+  it('returns NULL_SESSION for an empty Bearer credential', async () => {
+    await request(app.getHttpServer())
+      .get('/auth/me')
+      .set('Authorization', 'Bearer')
+      .expect(401)
+      .expect(nullSessionResponse);
   });
 
   it('returns INVALID_SESSION for an invalid or expired token', async () => {

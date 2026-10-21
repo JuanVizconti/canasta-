@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { MercadoPagoClientModule } from '../mercado-pago/mercado-pago-client.module';
+import { CommerceSettingsModule } from '../commerce-settings/commerce-settings.module';
 import { PedidoModule } from '../pedido/pedido.module';
 import { CheckoutController } from './checkout.controller';
 import { CheckoutPaymentService } from './checkout-payment.service';
@@ -10,7 +11,7 @@ import { CheckoutSnapshotStatusController } from './checkout-snapshot-status.con
 import { CheckoutSnapshotService } from './checkout-snapshot.service';
 
 @Module({
-  imports: [AuthModule, MercadoPagoClientModule, PedidoModule],
+  imports: [AuthModule, MercadoPagoClientModule, PedidoModule, CommerceSettingsModule],
   controllers: [CheckoutController, CheckoutSnapshotStatusController],
   providers: [
     CheckoutSnapshotService,

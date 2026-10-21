@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { PaymentMethod, PaymentStatus, PedidoEstado, Prisma } from '@prisma/client';
 import { CartService } from '../cart/cart.service';
+import { CommerceSettingsService } from '../commerce-settings/commerce-settings.service';
 import { CreatePedidoDto } from './dto/create-pedido.dto';
 import { QuotePedidoDto } from './dto/quote-pedido.dto';
 import { DeliveryMethod } from './interfaces/delivery-method.enum';
@@ -25,13 +26,28 @@ describe('PedidoService', () => {
     process.env.DATABASE_URL ??= 'postgresql://canasta:canasta@localhost:5432/canasta?schema=public';
   });
 
-  const createService = (subtotal = '20000.00') => {
+  const createService = (subtotal = '20000.00', serviceFee = '500.00') => {
     const cartService = {
       getSubtotalForUser: jest.fn().mockResolvedValue(new Prisma.Decimal(subtotal)),
     } as unknown as CartService;
+    const commerceSettingsService = {
+      validateMinimumPurchase: jest.fn().mockImplementation(async (value: Prisma.Decimal) => {
+        if (value.lessThan(new Prisma.Decimal('10000.00'))) {
+          throw new BadRequestException({
+            code: PedidoErrorCode.MINIMUM_PURCHASE_NOT_REACHED,
+          });
+        }
+
+        return {
+          minimumPurchaseAmount: new Prisma.Decimal('10000.00'),
+          serviceFee: new Prisma.Decimal(serviceFee),
+        };
+      }),
+    } as unknown as CommerceSettingsService;
     return {
-      service: new PedidoService(cartService),
+      service: new PedidoService(cartService, commerceSettingsService),
       cartService,
+      commerceSettingsService,
     };
   };
 
@@ -152,6 +168,29 @@ describe('PedidoService', () => {
     expect(transaction.pedido.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         subtotal: new Prisma.Decimal('12000.00'), deliveryFee: new Prisma.Decimal(0), total: new Prisma.Decimal('12500.00'),
+      }),
+    }));
+  });
+
+  it('uses the current service fee from CommerceSettings at the exact minimum, not a client value', async () => {
+    const { service, commerceSettingsService } = createService('10000.00', '700.00');
+    const { transaction } = configureTransaction(service, cartWithProduct('5000.00'));
+
+    await service.create(7, {
+      ...createPedidoDto,
+      delivery: { method: DeliveryMethod.PICKUP },
+      serviceFee: '1.00',
+    } as unknown as CreatePedidoDto);
+
+    expect(commerceSettingsService.validateMinimumPurchase).toHaveBeenCalledWith(
+      new Prisma.Decimal('10000.00'),
+    );
+    expect(transaction.pedido.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        subtotal: new Prisma.Decimal('10000.00'),
+        serviceFee: new Prisma.Decimal('700.00'),
+        deliveryFee: new Prisma.Decimal(0),
+        total: new Prisma.Decimal('10700.00'),
       }),
     }));
   });

@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, ElementRef, HostListener, inject, signal } from '@angular/core';
 import { Router, NavigationEnd, RouterLink, RouterOutlet } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { filter, map } from 'rxjs';
@@ -24,6 +24,7 @@ export class App {
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
   private readonly overlayService = inject(OverlayService);
+  private readonly hostElement = inject(ElementRef<HTMLElement>);
   private readonly currentUrl = toSignal(
     this.router.events.pipe(
       filter((event): event is NavigationEnd => event instanceof NavigationEnd),
@@ -39,9 +40,25 @@ export class App {
   });
   readonly showLogoutConfirmation = signal(false);
   readonly logoutMessage = signal('');
+  readonly isProfileMenuOpen = signal(false);
 
-  goToLogin():void{
+  toggleProfileMenu(): void {
+    this.isProfileMenuOpen.update((isOpen) => !isOpen);
+  }
+
+  goToLogin(): void {
+    this.closeProfileMenu();
     this.overlayService.openLogin();
+  }
+
+  goToRegister(): void {
+    this.closeProfileMenu();
+    this.overlayService.openRegister();
+  }
+
+  goToAccount(): void {
+    this.closeProfileMenu();
+    void this.router.navigate(['/account']);
   }
 
   openCart(): void {
@@ -52,7 +69,8 @@ export class App {
     void this.router.navigate(['/']);
   }
   
-  openLogoutConfirmation():void{
+  openLogoutConfirmation(): void {
+    this.closeProfileMenu();
     this.showLogoutConfirmation.set(true);
   }
   
@@ -75,5 +93,18 @@ export class App {
 
   closeOverlay(): void {
     this.overlayService.close();
+  }
+
+  @HostListener('document:click', ['$event'])
+  closeProfileMenuOnOutsideClick(event: Event): void {
+    const profileMenu = this.hostElement.nativeElement.querySelector('.profile-menu');
+
+    if (event.target instanceof Node && !profileMenu?.contains(event.target)) {
+      this.closeProfileMenu();
+    }
+  }
+
+  private closeProfileMenu(): void {
+    this.isProfileMenuOpen.set(false);
   }
 }

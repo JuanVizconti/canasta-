@@ -3,6 +3,7 @@ import { signal } from '@angular/core';
 import { of } from 'rxjs';
 import { Cart } from '../cart/model/cart.interface';
 import { CartService } from '../cart/service/cart.service';
+import { CommerceSettingsService } from '../commerce-settings/service/commerce-settings.service';
 import { PedidoService } from '../pedido/service/pedido.service';
 import { CheckoutComponent } from './checkout.component';
 import { CheckoutData } from './model/checkout.interface';
@@ -68,6 +69,9 @@ describe('CheckoutComponent', () => {
           provide: CartService,
           useValue: {
             cart: signal(cart).asReadonly(),
+            feedback: signal(null).asReadonly(),
+            showError: () => undefined,
+            clearFeedback: () => undefined,
             getCart: () => of(cart),
             updateItem: () => of(cart),
             removeItem: () => of(cart),
@@ -77,6 +81,15 @@ describe('CheckoutComponent', () => {
           provide: PedidoService,
           useValue: {
             quote: () => of({ subtotal: '0.00', serviceFee: '0.00', deliveryFee: '0.00', total: '0.00' }),
+          },
+        },
+        {
+          provide: CommerceSettingsService,
+          useValue: {
+            settings: signal({ minimumPurchaseAmount: '10000.00', serviceFee: '500.00' }).asReadonly(),
+            isLoading: signal(false).asReadonly(),
+            errorMessage: signal('').asReadonly(),
+            load: () => undefined,
           },
         },
       ],

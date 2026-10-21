@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AuthModule } from './auth/auth.module';
 import { CartModule } from './cart/cart.module';
+import { CommerceSettingsModule } from './commerce-settings/commerce-settings.module';
 import { CheckoutSnapshotModule } from './checkout-snapshot/checkout-snapshot.module';
 import { MercadoPagoModule } from './mercado-pago/mercado-pago.module';
 import { PedidoModule } from './pedido/pedido.module';
@@ -15,6 +16,7 @@ import { UserService } from './user/user.service';
     ScheduleModule.forRoot(),
     AuthModule,
     CartModule,
+    CommerceSettingsModule,
     CheckoutSnapshotModule,
     PedidoModule,
     MercadoPagoModule,

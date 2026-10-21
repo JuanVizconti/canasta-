@@ -38,6 +38,13 @@ enum CheckoutSnapshotStatus {
   FAILED
 }
 
+model CommerceSettings {
+  id                    Int      @id
+  minimumPurchaseAmount Decimal  @db.Decimal(10, 2)
+  serviceFee            Decimal  @db.Decimal(10, 2)
+  updatedAt             DateTime @updatedAt
+}
+
 model Product {
   id          Int          @id @default(autoincrement())
   marca       String

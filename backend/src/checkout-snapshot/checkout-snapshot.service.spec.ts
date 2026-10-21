@@ -4,9 +4,33 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CheckoutSnapshotStatus, Prisma } from '@prisma/client';
+import { CommerceSettingsService } from '../commerce-settings/commerce-settings.service';
 import { CreateCheckoutSnapshotInput, CheckoutSnapshotService } from './checkout-snapshot.service';
 
 describe('CheckoutSnapshotService', () => {
+  const createCommerceSettingsService = (
+    minimumPurchaseAmount = '10000.00',
+    serviceFee = '500.00',
+  ) => ({
+    validateMinimumPurchase: jest.fn().mockImplementation(async (subtotal: Prisma.Decimal) => {
+      if (subtotal.lessThan(new Prisma.Decimal(minimumPurchaseAmount))) {
+        throw new BadRequestException({ code: 'MINIMUM_PURCHASE_NOT_REACHED' });
+      }
+
+      return {
+        minimumPurchaseAmount: new Prisma.Decimal(minimumPurchaseAmount),
+        serviceFee: new Prisma.Decimal(serviceFee),
+      };
+    }),
+  }) as unknown as CommerceSettingsService;
+
+  const createSnapshotService = (
+    minimumPurchaseAmount?: string,
+    serviceFee?: string,
+  ) => new CheckoutSnapshotService(
+    createCommerceSettingsService(minimumPurchaseAmount, serviceFee),
+  );
+
   const checkout: CreateCheckoutSnapshotInput = {
     personalInfo: {
       nombre: 'Juan',
@@ -60,8 +84,16 @@ describe('CheckoutSnapshotService', () => {
     ],
   });
 
-  const createService = (cart = cartWithItems()) => {
-    const service = new CheckoutSnapshotService();
+  const createService = (
+    cart = cartWithItems(),
+    minimumPurchaseAmount?: string,
+    serviceFee?: string,
+  ) => {
+    const commerceSettingsService = createCommerceSettingsService(
+      minimumPurchaseAmount,
+      serviceFee,
+    );
+    const service = new CheckoutSnapshotService(commerceSettingsService);
     const snapshot = {
       id: 20,
       status: CheckoutSnapshotStatus.ACTIVE,
@@ -82,7 +114,7 @@ describe('CheckoutSnapshotService', () => {
     };
     (service as unknown as { prisma: typeof prisma }).prisma = prisma;
 
-    return { service, prisma, transaction, snapshot };
+    return { service, prisma, transaction, snapshot, commerceSettingsService };
   };
 
   beforeEach(() => {
@@ -184,6 +216,75 @@ describe('CheckoutSnapshotService', () => {
     });
   });
 
+  it('uses and freezes the current CommerceSettings service fee at the exact minimum', async () => {
+    const cart = {
+      id: 12,
+      items: [{
+        id: 1,
+        cartId: 12,
+        productId: 4,
+        cantidad: 1,
+        product: {
+          id: 4,
+          nombre: 'Arroz',
+          marca: 'Canasta',
+          precio: new Prisma.Decimal('10000.00'),
+          stock: 5,
+        },
+      }],
+    };
+    const { service, transaction, commerceSettingsService } = createService(
+      cart,
+      '10000.00',
+      '700.00',
+    );
+
+    await service.create(7, {
+      ...checkout,
+      delivery: { method: 'PICKUP' },
+      serviceFee: '1.00',
+    } as unknown as CreateCheckoutSnapshotInput);
+
+    expect(commerceSettingsService.validateMinimumPurchase).toHaveBeenCalledWith(
+      new Prisma.Decimal('10000.00'),
+    );
+    expect(transaction.checkoutSnapshot.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        subtotal: new Prisma.Decimal('10000.00'),
+        serviceFee: new Prisma.Decimal('700.00'),
+        deliveryFee: new Prisma.Decimal(0),
+        total: new Prisma.Decimal('10700.00'),
+      }),
+    }));
+  });
+
+  it('rejects a subtotal below the global minimum before creating a snapshot or reserving stock', async () => {
+    const cart = {
+      id: 12,
+      items: [{
+        id: 1,
+        cartId: 12,
+        productId: 4,
+        cantidad: 1,
+        product: {
+          id: 4,
+          nombre: 'Arroz',
+          marca: 'Canasta',
+          precio: new Prisma.Decimal('9999.99'),
+          stock: 5,
+        },
+      }],
+    };
+    const { service, transaction } = createService(cart);
+
+    await expect(service.create(7, checkout)).rejects.toMatchObject({
+      response: { code: 'MINIMUM_PURCHASE_NOT_REACHED' },
+    });
+
+    expect(transaction.checkoutSnapshot.create).not.toHaveBeenCalled();
+    expect(transaction.product.updateMany).not.toHaveBeenCalled();
+  });
+
   it('rejects an empty cart without creating a snapshot or reserving stock', async () => {
     const { service, transaction } = createService({ id: 12, items: [] });
 
@@ -256,7 +357,7 @@ describe('CheckoutSnapshotService', () => {
     [CheckoutSnapshotStatus.FAILED, null],
     [CheckoutSnapshotStatus.EXPIRED, null],
   ])('returns %s status only for the authenticated snapshot owner', async (status, pedidoId) => {
-    const service = new CheckoutSnapshotService();
+    const service = createSnapshotService();
     const prisma = {
       checkoutSnapshot: {
         findFirst: jest.fn().mockResolvedValue({ status, pedidoId }),
@@ -277,7 +378,7 @@ describe('CheckoutSnapshotService', () => {
   });
 
   it('rejects a snapshot id that is not a positive integer', async () => {
-    const service = new CheckoutSnapshotService();
+    const service = createSnapshotService();
     const prisma = { checkoutSnapshot: { findFirst: jest.fn() } };
     (service as unknown as { prisma: typeof prisma }).prisma = prisma;
 
@@ -288,7 +389,7 @@ describe('CheckoutSnapshotService', () => {
   });
 
   it('returns the same not-found result for a missing or foreign snapshot', async () => {
-    const service = new CheckoutSnapshotService();
+    const service = createSnapshotService();
     const prisma = {
       checkoutSnapshot: { findFirst: jest.fn().mockResolvedValue(null) },
     };
@@ -304,7 +405,7 @@ describe('CheckoutSnapshotService', () => {
   });
 
   it('rejects a completed snapshot without its persisted pedido', async () => {
-    const service = new CheckoutSnapshotService();
+    const service = createSnapshotService();
     const prisma = {
       checkoutSnapshot: {
         findFirst: jest.fn().mockResolvedValue({
@@ -321,7 +422,7 @@ describe('CheckoutSnapshotService', () => {
   });
 
   it('marks an ACTIVE snapshot as FAILED and restores each reserved item stock', async () => {
-    const service = new CheckoutSnapshotService();
+    const service = createSnapshotService();
     const transaction = {
       checkoutSnapshot: {
         findUnique: jest.fn().mockResolvedValue({
@@ -357,7 +458,7 @@ describe('CheckoutSnapshotService', () => {
   });
 
   it('does not restore stock twice when the snapshot is already FAILED', async () => {
-    const service = new CheckoutSnapshotService();
+    const service = createSnapshotService();
     const transaction = {
       checkoutSnapshot: {
         findUnique: jest.fn().mockResolvedValue({
