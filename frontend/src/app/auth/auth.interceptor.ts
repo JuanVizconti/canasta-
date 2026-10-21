@@ -10,7 +10,7 @@ export const authInterceptor: HttpInterceptorFn = (request, next) => {
   const authService = inject(AuthService);
   const router = inject(Router);
   const overlayService = inject(OverlayService);
-  const accessToken = localStorage.getItem('accessToken');
+  const accessToken = authService.getAccessToken();
   const authenticatedRequest = accessToken
     ? request.clone({
         setHeaders: { Authorization: `Bearer ${accessToken}` },
@@ -20,6 +20,12 @@ export const authInterceptor: HttpInterceptorFn = (request, next) => {
   return next(authenticatedRequest).pipe(
     catchError((error: HttpErrorResponse) => {
       const errorBody = error.error as Partial<AuthErrorResponse> | null;
+
+      if (error.status === 401 && errorBody?.code === 'NULL_SESSION') {
+        if (overlayService.activeOverlay() !== 'login') {
+          overlayService.openLogin(router.url);
+        }
+      }
 
       if (error.status === 401 && errorBody?.code === 'INVALID_SESSION') {
         authService.logout();

@@ -17,7 +17,7 @@ export class CartReviewComponent implements OnInit {
 
   readonly completed = output<void>();
   readonly cart = this.cartService.cart;
-  readonly errorMessage = signal('');
+  readonly cartFeedback = this.cartService.feedback;
   readonly commerceSettings = this.commerceSettingsService.settings;
   readonly isLoadingCommerceSettings = this.commerceSettingsService.isLoading;
   readonly commerceSettingsError = this.commerceSettingsService.errorMessage;
@@ -113,12 +113,12 @@ export class CartReviewComponent implements OnInit {
 
   private loadCart(): void {
     this.cartService.getCart().subscribe({
-      error: () => this.errorMessage.set('No se pudo cargar el carrito.'),
+      error: () => this.cartService.showError('No se pudo cargar el carrito.'),
     });
   }
 
   private updateCart(productId: number, request: () => Observable<Cart>): void {
-    this.errorMessage.set('');
+    this.cartService.clearFeedback();
     this.pendingProductIds.update((pending) => new Set(pending).add(productId));
     request().subscribe({
       next: (cart) => {
@@ -126,7 +126,7 @@ export class CartReviewComponent implements OnInit {
         this.completeProductOperation(productId);
       },
       error: () => {
-        this.errorMessage.set('No se pudo actualizar el carrito.');
+        this.cartService.showError('No se pudo actualizar el carrito.');
         this.completeProductOperation(productId);
       },
     });

@@ -108,6 +108,13 @@ describe('AuthService', () => {
     expect(service.isAuthenticated()).toBe(false);
   });
 
+  it('exposes the stored access token through AuthService', () => {
+    localStorage.setItem('accessToken', 'jwt-token');
+    service = TestBed.inject(AuthService);
+
+    expect(service.getAccessToken()).toBe('jwt-token');
+  });
+
   it('gets the current authenticated user profile', () => {
     service = TestBed.inject(AuthService);
     const profile = { id: 1, nombre: 'Juan', email: 'juan@email.com' };

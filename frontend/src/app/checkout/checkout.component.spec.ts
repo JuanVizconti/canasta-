@@ -69,6 +69,9 @@ describe('CheckoutComponent', () => {
           provide: CartService,
           useValue: {
             cart: signal(cart).asReadonly(),
+            feedback: signal(null).asReadonly(),
+            showError: () => undefined,
+            clearFeedback: () => undefined,
             getCart: () => of(cart),
             updateItem: () => of(cart),
             removeItem: () => of(cart),

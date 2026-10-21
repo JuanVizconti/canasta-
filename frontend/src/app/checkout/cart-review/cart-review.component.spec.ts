@@ -55,6 +55,9 @@ describe('CartReviewComponent', () => {
 
     const cartService = {
       cart: cartState.asReadonly(),
+      feedback: signal(null).asReadonly(),
+      showError: () => undefined,
+      clearFeedback: () => undefined,
       getCart: () => of(cartState() ?? cartWithQuantity(0)),
       updateItem: (productId: number, cantidad: number) => {
         updateItemCalls.push([productId, cantidad]);

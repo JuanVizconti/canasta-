@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthService } from '../auth/service/auth.service';
 import { CommerceSettingsService } from '../commerce-settings/service/commerce-settings.service';
@@ -22,7 +22,7 @@ export class CartComponent implements OnInit {
   readonly commerceSettings = this.commerceSettingsService.settings;
   readonly isLoadingCommerceSettings = this.commerceSettingsService.isLoading;
   readonly commerceSettingsError = this.commerceSettingsService.errorMessage;
-  errorMessage = signal('');
+  readonly cartFeedback = this.cartService.feedback;
 
   ngOnInit(): void {
     if (!this.isAuthenticated()) {
@@ -116,18 +116,14 @@ decreaseQuantity(productId: number, cantidadActual: number): void {
   
   private loadCart(): void {
     this.cartService.getCart().subscribe({
-      error: () => this.errorMessage.set('No se pudo cargar el carrito.'),
+      error: () => this.cartService.showError('No se pudo cargar el carrito.'),
     });
   }
 
   private updateCart(request: () => ReturnType<CartService['getCart']>): void {
-    this.errorMessage.set('');
+    this.cartService.clearFeedback();
     request().subscribe({
-      error: () => this.errorMessage.set('No se pudo actualizar el carrito.'),
+      error: () => this.cartService.showError('No se pudo actualizar el carrito.'),
     });
-
-    setTimeout(() => {
-          this.errorMessage.set('');
-    }, 2500 );
   }
 }

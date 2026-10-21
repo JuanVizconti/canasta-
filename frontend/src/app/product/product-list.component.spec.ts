@@ -57,6 +57,10 @@ describe('ProductListComponent', () => {
 
     const cartService = {
       cart: cartState.asReadonly(),
+      feedback: signal(null).asReadonly(),
+      showSuccess: () => undefined,
+      showError: () => undefined,
+      clearFeedback: () => undefined,
       getCart: () => {
         getCartCalls++;
         return of(cartState() ?? emptyCart());

@@ -64,7 +64,7 @@
     </button>
   }
 
-  @if (errorMessage()) {
-    <p>{{ errorMessage() }}</p>
+  @if (cartFeedback(); as feedback) {
+    <p>{{ feedback.text }}</p>
   }
 </section>

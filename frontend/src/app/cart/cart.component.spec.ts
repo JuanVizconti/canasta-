@@ -69,6 +69,9 @@ describe('CartComponent', () => {
           provide: CartService,
           useValue: {
             cart: cartState.asReadonly(),
+            feedback: signal(null).asReadonly(),
+            showError: () => undefined,
+            clearFeedback: () => undefined,
             getCart: () => {
               getCartCalls++;
               return getCartResult.pipe(tap((cart) => cartState.set(cart)));

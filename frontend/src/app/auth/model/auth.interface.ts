@@ -25,7 +25,10 @@ export interface AuthenticatedUser {
   email: string;
 }
 
-export type AuthErrorCode = 'INVALID_CREDENTIALS' | 'INVALID_SESSION';
+export type AuthErrorCode =
+  | 'NULL_SESSION'
+  | 'INVALID_CREDENTIALS'
+  | 'INVALID_SESSION';
 
 export interface AuthErrorResponse {
   statusCode: number;

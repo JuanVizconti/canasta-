@@ -35,6 +35,9 @@ describe('app routes', () => {
           provide: CartService,
           useValue: {
             cart: signal(null).asReadonly(),
+            feedback: signal(null).asReadonly(),
+            showError: () => undefined,
+            clearFeedback: () => undefined,
             getCart: () => of({ id: null, price: '0.00', items: [] }),
             addItem: () => of({ id: null, price: '0.00', items: [] }),
           },

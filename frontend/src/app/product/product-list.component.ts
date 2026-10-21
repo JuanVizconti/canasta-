@@ -19,7 +19,7 @@ export class ProductListComponent implements OnInit {
 
   products = signal<Product[]>([]);
   errorMessage = signal('');
-  notificationMessage = signal('');
+  readonly cartFeedback = this.cartService.feedback;
   private readonly pendingProductIds = signal<ReadonlySet<number>>(new Set());
   readonly cart = this.cartService.cart;
   private readonly loadCartOnAuthentication = effect(() => {
@@ -87,7 +87,7 @@ export class ProductListComponent implements OnInit {
 
   private loadCart(): void {
     this.cartService.getCart().subscribe({
-      error: () => this.errorMessage.set('No se pudo cargar el carrito.'),
+      error: () => this.cartService.showError('No se pudo cargar el carrito.'),
     });
   }
 
@@ -96,16 +96,16 @@ export class ProductListComponent implements OnInit {
     request: () => Observable<Cart>,
     successMessage = 'Carrito actualizado.',
   ): void {
-    this.errorMessage.set('');
+    this.cartService.clearFeedback();
     this.pendingProductIds.update((pending) => new Set(pending).add(productId));
 
     request().subscribe({
       next: () => {
-        this.notificationMessage.set(successMessage);
+        this.cartService.showSuccess(successMessage);
         this.completeProductOperation(productId);
       },
       error: () => {
-        this.errorMessage.set('No se pudo actualizar el carrito.');
+        this.cartService.showError('No se pudo actualizar el carrito.');
         this.completeProductOperation(productId);
       },
     });

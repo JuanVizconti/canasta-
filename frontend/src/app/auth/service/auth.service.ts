@@ -40,6 +40,10 @@ export class AuthService {
     return this.http.get<AuthenticatedUser>(this.profileUrl);
   }
 
+  getAccessToken(): string | null {
+    return localStorage.getItem('accessToken');
+  }
+
   logout(): void {
     localStorage.removeItem('accessToken');
     this.authenticated.set(false);

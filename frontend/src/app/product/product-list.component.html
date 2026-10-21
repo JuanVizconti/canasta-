@@ -1,8 +1,8 @@
 <section>
   <h2>Productos</h2>
 
-  @if (notificationMessage()) {
-    <p>{{ notificationMessage() }}</p>
+  @if (cartFeedback(); as feedback) {
+    <p>{{ feedback.text }}</p>
   }
   
   @if (errorMessage()) {
