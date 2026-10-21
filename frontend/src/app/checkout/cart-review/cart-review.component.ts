@@ -2,6 +2,7 @@ import { Component, inject, OnInit, output, signal } from '@angular/core';
 import { Observable } from 'rxjs';
 import { Cart } from '../../cart/model/cart.interface';
 import { CartService } from '../../cart/service/cart.service';
+import { CommerceSettingsService } from '../../commerce-settings/service/commerce-settings.service';
 import { CheckoutService } from '../service/checkout.service';
 
 @Component({
@@ -12,16 +13,22 @@ import { CheckoutService } from '../service/checkout.service';
 export class CartReviewComponent implements OnInit {
   private readonly cartService = inject(CartService);
   private readonly checkoutService = inject(CheckoutService);
+  private readonly commerceSettingsService = inject(CommerceSettingsService);
 
   readonly completed = output<void>();
   readonly cart = this.cartService.cart;
   readonly errorMessage = signal('');
+  readonly commerceSettings = this.commerceSettingsService.settings;
+  readonly isLoadingCommerceSettings = this.commerceSettingsService.isLoading;
+  readonly commerceSettingsError = this.commerceSettingsService.errorMessage;
   private readonly pendingProductIds = signal<ReadonlySet<number>>(new Set());
 
   ngOnInit(): void {
     if (this.cart() === null) {
       this.loadCart();
     }
+
+    this.loadCommerceSettings();
   }
 
   increaseQuantity(productId: number, cantidadActual: number, stock: number): void {
@@ -56,12 +63,52 @@ export class CartReviewComponent implements OnInit {
   confirmCart(): void {
     const cart = this.cart();
 
-    if (!cart || cart.items.length === 0) {
+    if (!cart || cart.items.length === 0 || !this.canConfirmCart()) {
       return;
     }
 
     this.checkoutService.updateCart(cart);
     this.completed.emit();
+  }
+
+  canConfirmCart(): boolean {
+    const cart = this.cart();
+    const settings = this.commerceSettings();
+
+    return !!cart && cart.items.length > 0 && !!settings && !this.isBelowMinimum();
+  }
+
+  isBelowMinimum(): boolean {
+    const cart = this.cart();
+    const settings = this.commerceSettings();
+
+    return !!cart && !!settings && Number(cart.price) < Number(settings.minimumPurchaseAmount);
+  }
+
+  remainingForMinimum(): string {
+    const cart = this.cart();
+    const settings = this.commerceSettings();
+
+    if (!cart || !settings) {
+      return '0.00';
+    }
+
+    return Math.max(0, Number(settings.minimumPurchaseAmount) - Number(cart.price)).toFixed(2);
+  }
+
+  totalWithServiceFee(): string {
+    const cart = this.cart();
+    const settings = this.commerceSettings();
+
+    if (!cart || !settings) {
+      return '0.00';
+    }
+
+    return (Number(cart.price) + Number(settings.serviceFee)).toFixed(2);
+  }
+
+  loadCommerceSettings(): void {
+    this.commerceSettingsService.load();
   }
 
   private loadCart(): void {

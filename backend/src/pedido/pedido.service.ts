@@ -9,6 +9,7 @@ import {
   PrismaClient,
 } from '@prisma/client';
 import { CartService } from '../cart/cart.service';
+import { CommerceSettingsService } from '../commerce-settings/commerce-settings.service';
 import { CreatePedidoDto } from './dto/create-pedido.dto';
 import { DeliveryMethod } from './interfaces/delivery-method.enum';
 import { QuotePedidoDto } from './dto/quote-pedido.dto';
@@ -45,11 +46,12 @@ type PedidoWithMercadoPagoPayment = PedidoForMercadoPagoRefund & {
 @Injectable()
 export class PedidoService implements OnModuleDestroy {
   private readonly prisma: PrismaClient;
-  private static readonly minimumPurchase = new Prisma.Decimal(10000);
-  private static readonly serviceFee = new Prisma.Decimal(500);
   private static readonly deliveryPercentage = new Prisma.Decimal('0.10');
 
-  constructor(private readonly cartService: CartService) {
+  constructor(
+    private readonly cartService: CartService,
+    private readonly commerceSettingsService: CommerceSettingsService,
+  ) {
     const connectionString = process.env.DATABASE_URL;
 
     if (!connectionString) {
@@ -135,8 +137,12 @@ export class PedidoService implements OnModuleDestroy {
       const cart= await this.getCartForCheckout(transaction, userId);
       
       const subTotal= this.calculateSubtotal(cart?.items ?? []);
-      
-      const pricing= this.calculatePricing(subTotal, createPedidoDto.delivery.method);
+      const settings = await this.commerceSettingsService.validateMinimumPurchase(subTotal);
+      const pricing= this.calculatePricing(
+        subTotal,
+        createPedidoDto.delivery.method,
+        settings.serviceFee,
+      );
       
       const pedido= await transaction.pedido.create({
         data:{
@@ -192,7 +198,12 @@ export class PedidoService implements OnModuleDestroy {
   
   async quote(userId: number, { deliveryMethod }: QuotePedidoDto) {
     const subtotal = await this.cartService.getSubtotalForUser(userId);
-    const pricing = this.calculatePricing(subtotal, deliveryMethod);
+    const settings = await this.commerceSettingsService.validateMinimumPurchase(subtotal);
+    const pricing = this.calculatePricing(
+      subtotal,
+      deliveryMethod,
+      settings.serviceFee,
+    );
     
     return {
       subtotal: pricing.subtotal.toFixed(2),
@@ -273,16 +284,11 @@ export class PedidoService implements OnModuleDestroy {
     return subtotal.plus(serviceFee).plus(deliveryFee);
   }
   
-  private calculatePricing(subtotal: Prisma.Decimal, deliveryMethod: DeliveryMethod) {
-    if (subtotal.lessThan(PedidoService.minimumPurchase)) {
-      throw new BadRequestException({
-        statusCode: HttpStatus.BAD_REQUEST,
-        code: PedidoErrorCode.MINIMUM_PURCHASE_NOT_REACHED,
-        message: 'El monto mínimo de compra es de $10.000',
-      });
-    }
-    
-    const serviceFee = PedidoService.serviceFee;
+  private calculatePricing(
+    subtotal: Prisma.Decimal,
+    deliveryMethod: DeliveryMethod,
+    serviceFee: Prisma.Decimal,
+  ) {
     const deliveryFee = this.calculateDeliveryFee(subtotal, deliveryMethod);
     
     return {

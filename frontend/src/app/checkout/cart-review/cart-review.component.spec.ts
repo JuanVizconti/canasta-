@@ -3,6 +3,8 @@ import { signal } from '@angular/core';
 import { of, Subject } from 'rxjs';
 import { Cart } from '../../cart/model/cart.interface';
 import { CartService } from '../../cart/service/cart.service';
+import { CommerceSettings } from '../../commerce-settings/model/commerce-settings.interface';
+import { CommerceSettingsService } from '../../commerce-settings/service/commerce-settings.service';
 import { CheckoutService } from '../service/checkout.service';
 import { CartReviewComponent } from './cart-review.component';
 
@@ -13,10 +15,16 @@ describe('CartReviewComponent', () => {
   let updateItemCalls: Array<[number, number]>;
   let removeItemCalls: number[];
   let checkoutCartUpdates: Cart[];
+  const commerceSettingsState = signal<CommerceSettings | null>({
+    minimumPurchaseAmount: '10000.00',
+    serviceFee: '500.00',
+  });
+  const commerceSettingsLoadingState = signal(false);
+  const commerceSettingsErrorState = signal('');
 
   const cartWithQuantity = (cantidad: number): Cart => ({
     id: 1,
-    price: (1250.25 * cantidad).toFixed(2),
+    price: (6000 * cantidad).toFixed(2),
     items: cantidad === 0
       ? []
       : [
@@ -28,7 +36,7 @@ describe('CartReviewComponent', () => {
               id: 2,
               marca: 'Canasta',
               nombre: 'Arroz',
-              precio: '1250.25',
+              precio: '6000.00',
               stock: 4,
               imgUrl: null,
             },
@@ -41,6 +49,9 @@ describe('CartReviewComponent', () => {
     updateItemCalls = [];
     removeItemCalls = [];
     checkoutCartUpdates = [];
+    commerceSettingsState.set({ minimumPurchaseAmount: '10000.00', serviceFee: '500.00' });
+    commerceSettingsLoadingState.set(false);
+    commerceSettingsErrorState.set('');
 
     const cartService = {
       cart: cartState.asReadonly(),
@@ -67,6 +78,15 @@ describe('CartReviewComponent', () => {
       providers: [
         { provide: CartService, useValue: cartService },
         { provide: CheckoutService, useValue: checkoutService },
+        {
+          provide: CommerceSettingsService,
+          useValue: {
+            settings: commerceSettingsState.asReadonly(),
+            isLoading: commerceSettingsLoadingState.asReadonly(),
+            errorMessage: commerceSettingsErrorState.asReadonly(),
+            load: () => undefined,
+          },
+        },
       ],
     }).compileComponents();
 
@@ -79,7 +99,9 @@ describe('CartReviewComponent', () => {
 
     expect(fixture.nativeElement.textContent).toContain('Arroz');
     expect(fixture.nativeElement.textContent).toContain('2');
-    expect(fixture.nativeElement.textContent).toContain('Subtotal: $2500.50');
+    expect(fixture.nativeElement.textContent).toContain('Subtotal: $12000.00');
+    expect(fixture.nativeElement.textContent).toContain('Costo de servicio: $500.00');
+    expect(fixture.nativeElement.textContent).toContain('Total parcial: $12500.00');
     expect(fixture.nativeElement.textContent).not.toContain('Eliminar');
   });
 
@@ -114,7 +136,7 @@ describe('CartReviewComponent', () => {
       [2, 2],
     ]);
     expect(checkoutCartUpdates).toEqual([cartWithQuantity(3), cartWithQuantity(2)]);
-    expect(fixture.nativeElement.textContent).toContain('Subtotal: $2500.50');
+    expect(fixture.nativeElement.textContent).toContain('Subtotal: $12000.00');
   });
 
   it('removes an item when decreasing quantity one and prevents checkout when it was the last item', () => {
@@ -164,6 +186,36 @@ describe('CartReviewComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('1');
-    expect(fixture.nativeElement.textContent).toContain('Subtotal: $1250.25');
+    expect(fixture.nativeElement.textContent).toContain('Subtotal: $6000.00');
+  });
+
+  it('blocks confirmation below the configured minimum without replacing the snapshot', () => {
+    cartState.set(cartWithQuantity(1));
+    let completed = 0;
+    component.completed.subscribe(() => completed++);
+
+    component.confirmCart();
+
+    expect(checkoutCartUpdates).toEqual([]);
+    expect(completed).toBe(0);
+  });
+
+  it('allows confirmation at the exact configured minimum', () => {
+    cartState.set({ ...cartWithQuantity(2), price: '10000.00' });
+    let completed = 0;
+    component.completed.subscribe(() => completed++);
+
+    component.confirmCart();
+
+    expect(checkoutCartUpdates).toEqual([{ ...cartWithQuantity(2), price: '10000.00' }]);
+    expect(completed).toBe(1);
+  });
+
+  it('re-evaluates the minimum after quantity changes in the live cart', () => {
+    component.decreaseQuantity(2, 2);
+    expect(component.canConfirmCart()).toBe(false);
+
+    component.increaseQuantity(2, 1, 4);
+    expect(component.canConfirmCart()).toBe(true);
   });
 });

@@ -32,7 +32,23 @@
     }
 
     <p>Subtotal: ${{ cart()!.price }}</p>
-    <button type="button" (click)="confirmCart()">Confirmar carrito</button>
+    @if (isLoadingCommerceSettings()) {
+      <p>Cargando configuración comercial...</p>
+    } @else if (commerceSettingsError()) {
+      <p>{{ commerceSettingsError() }}</p>
+      <button type="button" (click)="loadCommerceSettings()">Reintentar</button>
+    } @else if (commerceSettings(); as settings) {
+      <p>Costo de servicio: ${{ settings.serviceFee }}</p>
+      <p>Total parcial: ${{ totalWithServiceFee() }}</p>
+      <p>El costo de envío se calculará al seleccionar la entrega.</p>
+      @if (isBelowMinimum()) {
+        <p>Compra mínima: ${{ settings.minimumPurchaseAmount }}</p>
+        <p>Te faltan: ${{ remainingForMinimum() }}</p>
+      }
+    }
+    <button type="button" (click)="confirmCart()" [disabled]="!canConfirmCart()">
+      Confirmar carrito
+    </button>
   }
 
   @if (errorMessage()) {

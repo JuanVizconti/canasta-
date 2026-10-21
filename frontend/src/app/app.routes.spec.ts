@@ -6,6 +6,7 @@ import { of } from 'rxjs';
 import { AuthService } from './auth/service/auth.service';
 import { AccountComponent } from './account/account.component';
 import { CartService } from './cart/service/cart.service';
+import { CommerceSettingsService } from './commerce-settings/service/commerce-settings.service';
 import { CheckoutComponent } from './checkout/checkout.component';
 import { CheckoutSuccessComponent } from './checkout/success/checkout-success.component';
 import { CheckoutPaymentService } from './checkout/service/checkout-payment.service';
@@ -36,6 +37,15 @@ describe('app routes', () => {
             cart: signal(null).asReadonly(),
             getCart: () => of({ id: null, price: '0.00', items: [] }),
             addItem: () => of({ id: null, price: '0.00', items: [] }),
+          },
+        },
+        {
+          provide: CommerceSettingsService,
+          useValue: {
+            settings: signal({ minimumPurchaseAmount: '10000.00', serviceFee: '500.00' }).asReadonly(),
+            isLoading: signal(false).asReadonly(),
+            errorMessage: signal('').asReadonly(),
+            load: () => undefined,
           },
         },
         {

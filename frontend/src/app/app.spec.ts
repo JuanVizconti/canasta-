@@ -6,6 +6,7 @@ import { App } from './app';
 import { AuthService } from './auth/service/auth.service';
 import { routes } from './app.routes';
 import { CartService } from './cart/service/cart.service';
+import { CommerceSettingsService } from './commerce-settings/service/commerce-settings.service';
 import { CheckoutService } from './checkout/service/checkout.service';
 import { PedidoService } from './pedido/service/pedido.service';
 import { ProductService } from './product/service/product.service';
@@ -54,6 +55,15 @@ describe('App', () => {
             getCart: () => of({ id: null, price: '0.00', items: [] }),
             updateItem: () => of({ id: null, price: '0.00', items: [] }),
             removeItem: () => of({ id: null, price: '0.00', items: [] }),
+          },
+        },
+        {
+          provide: CommerceSettingsService,
+          useValue: {
+            settings: signal({ minimumPurchaseAmount: '10000.00', serviceFee: '500.00' }).asReadonly(),
+            isLoading: signal(false).asReadonly(),
+            errorMessage: signal('').asReadonly(),
+            load: () => undefined,
           },
         },
         {

@@ -15,6 +15,7 @@ import {
   PrismaClient,
 } from '@prisma/client';
 import { CreatePedidoDto } from '../pedido/dto/create-pedido.dto';
+import { CommerceSettingsService } from '../commerce-settings/commerce-settings.service';
 import { DeliveryMethod } from '../pedido/interfaces/delivery-method.enum';
 import { PedidoErrorCode } from '../pedido/interfaces/pedido-error-code.enum';
 
@@ -38,12 +39,10 @@ type CartForCheckout = Prisma.CartGetPayload<{
 @Injectable()
 export class CheckoutSnapshotService implements OnModuleDestroy {
   private readonly prisma: PrismaClient;
-  private static readonly minimumPurchase = new Prisma.Decimal(10000);
-  private static readonly serviceFee = new Prisma.Decimal(500);
   private static readonly deliveryPercentage = new Prisma.Decimal('0.10');
   private static readonly expirationMinutes = 30;
 
-  constructor() {
+  constructor(private readonly commerceSettingsService: CommerceSettingsService) {
     const connectionString = process.env.DATABASE_URL;
 
     if (!connectionString) {
@@ -73,9 +72,12 @@ export class CheckoutSnapshotService implements OnModuleDestroy {
       this.ensureProductsAreValid(cart.items);
       this.ensureStockIsAvailable(cart.items);
 
+      const subtotal = this.calculateSubtotal(cart.items);
+      const settings = await this.commerceSettingsService.validateMinimumPurchase(subtotal);
       const pricing = this.calculatePricing(
-        this.calculateSubtotal(cart.items),
+        subtotal,
         checkout.delivery.method,
+        settings.serviceFee,
       );
 
       const snapshot = await transaction.checkoutSnapshot.create({
@@ -208,16 +210,11 @@ export class CheckoutSnapshotService implements OnModuleDestroy {
     );
   }
 
-  private calculatePricing(subtotal: Prisma.Decimal, deliveryMethod: DeliveryMethod) {
-    if (subtotal.lessThan(CheckoutSnapshotService.minimumPurchase)) {
-      throw new BadRequestException({
-        statusCode: HttpStatus.BAD_REQUEST,
-        code: PedidoErrorCode.MINIMUM_PURCHASE_NOT_REACHED,
-        message: 'El monto mínimo de compra es de $10.000',
-      });
-    }
-
-    const serviceFee = CheckoutSnapshotService.serviceFee;
+  private calculatePricing(
+    subtotal: Prisma.Decimal,
+    deliveryMethod: DeliveryMethod,
+    serviceFee: Prisma.Decimal,
+  ) {
     const deliveryFee = deliveryMethod === DeliveryMethod.PICKUP
     ? new Prisma.Decimal(0)
     : subtotal.mul(CheckoutSnapshotService.deliveryPercentage);

@@ -45,8 +45,23 @@
       </article>
     }
 
-    <p>Precio total: ${{ cart()!.price }}</p>
-    <button type="button" (click)="continueToCheckout()">Continuar con la compra</button>
+    <p>Subtotal: ${{ cart()!.price }}</p>
+    @if (isLoadingCommerceSettings()) {
+      <p>Cargando configuración comercial...</p>
+    } @else if (commerceSettingsError()) {
+      <p>{{ commerceSettingsError() }}</p>
+      <button type="button" (click)="loadCommerceSettings()">Reintentar</button>
+    } @else if (commerceSettings(); as settings) {
+      <p>Costo de servicio: ${{ settings.serviceFee }}</p>
+      <p>Total: ${{ totalWithServiceFee() }}</p>
+      @if (isBelowMinimum()) {
+        <p>Compra mínima: ${{ settings.minimumPurchaseAmount }}</p>
+        <p>Te faltan: ${{ remainingForMinimum() }}</p>
+      }
+    }
+    <button type="button" (click)="continueToCheckout()" [disabled]="!canContinueToCheckout()">
+      Continuar con la compra
+    </button>
   }
 
   @if (errorMessage()) {
